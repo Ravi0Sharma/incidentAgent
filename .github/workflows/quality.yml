@@ -1,0 +1,55 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  local-safe-gate:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: incident_agent
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      CHECKPOINTER: mysql
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: incident_agent
+      MYSQL_USER: root
+      SKIP_LLM: "true"
+      OPENAI_API_KEY: test-provider-key
+      PUBLISH_EXTERNAL: "false"
+      PHOENIX_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install locked dependencies
+        run: |
+          python -m pip install pip==26.1.2 setuptools==84.0.0
+          python -m pip install --require-hashes -r requirements.lock
+      - name: Run deterministic quality gate
+        run: python scripts/quality_gate.py
+      - name: Generate CycloneDX SBOM
+        run: cyclonedx-py environment --output-format JSON --output-file sbom.json
+      - name: Audit locked dependencies
+        run: pip-audit -r requirements.lock --require-hashes
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quality-evidence
+          path: |
+            .coverage
+            sbom.json

@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+.git
+.venv
+.mypy_cache
+.ruff_cache
+.coverage
+__pycache__
+**/__pycache__
+.langgraph_api
+.phoenix_data
+data/external
+output
+mysql_sim.log
+*.pyc
+.DS_Store
