@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+.venv/
+.env
+
+.langgraph_api/
+.phoenix_data/
+
+output/
+var/
+*.log
+
+# Public datasets are fetched locally. Keep provenance/config in git, but never
+# commit upstream raw data or derived copies by accident.
+data/external/raw/
+data/external/processed/
+# Local investigation state may contain incident evidence; keep it local.
+data/*.sqlite3
+
+.DS_Store
