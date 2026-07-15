@@ -1,0 +1,17 @@
+# Deploy beside application metrics. These precompute incident features so
+# alert triage avoids repeating expensive PromQL calculations per incident.
+groups:
+  - name: incident_agent_features
+    interval: 1m
+    rules:
+      - record: service:http_error_rate5m
+        expr: |
+          sum by (service) (rate(http_requests_total{code=~"5.."}[5m]))
+          /
+          sum by (service) (rate(http_requests_total[5m]))
+      - record: service:http_request_rate5m
+        expr: sum by (service) (rate(http_requests_total[5m]))
+      - record: service:http_latency_p95_seconds5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[5m])))

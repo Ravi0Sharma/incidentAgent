@@ -1,0 +1,29 @@
+# Suppression rules — known-benign log patterns that should be
+# filtered out before the LLM sees them. Reduces noise and stops
+# false-positive hypotheses.
+#
+# Match order: rule matches if ALL specified fields match.
+# service, level, error_type: exact match on labels
+# message_regex: regex match on the example message
+# min_count: only suppress if group.count >= this (keep low-freq)
+
+suppressions:
+
+  - id: healthcheck-benign
+    service: payments
+    error_type: healthcheck
+    reason: Load balancer kills healthchecks during rolling deploys
+
+  - id: context-canceled
+    message_regex: "context canceled|context deadline exceeded on shutdown"
+    reason: Normal shutdown noise
+
+  - id: broken-pipe-info
+    level: info
+    message_regex: "broken pipe|EPIPE"
+    reason: Client disconnected mid-response, not an incident signal
+
+  - id: k8s-probe-noise
+    message_regex: "readiness probe failed.*i/o timeout"
+    min_count: 1
+    reason: Transient probe failures during pod startup

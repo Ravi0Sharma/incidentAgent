@@ -1,0 +1,74 @@
+# Business-tier per service. Used by classify_severity to combine
+# alert severity + business impact into a final SEV level.
+#
+# tier0: revenue-critical / customer-facing (checkout, payments, auth)
+# tier1: important customer-facing (search, catalog, api-gateway)
+# tier2: internal but user-visible (support tools, admin dashboards)
+# tier3: internal-only (batch jobs, internal metrics, dev tooling)
+
+services:
+
+  payments:
+    tier: 0
+    customer_facing: true
+    owner: platform
+    runbook: https://runbooks.example.com/payments
+    description: Payment processing, revenue path
+    dependencies:
+      - checkout
+      - auth
+      - billing-batch
+
+  checkout:
+    tier: 0
+    customer_facing: true
+    owner: commerce
+    runbook: https://runbooks.example.com/checkout
+    description: Checkout flow
+    dependencies:
+      - payments
+      - catalog
+      - auth
+
+  auth:
+    tier: 0
+    customer_facing: true
+    owner: identity
+    runbook: https://runbooks.example.com/auth
+    description: Login and session
+    dependencies: []
+
+  catalog:
+    tier: 1
+    customer_facing: true
+    owner: commerce
+    runbook: https://runbooks.example.com/catalog
+    dependencies:
+      - search
+
+  search:
+    tier: 1
+    customer_facing: true
+    owner: search
+    runbook: https://runbooks.example.com/search
+    dependencies:
+      - catalog
+
+  admin-dashboard:
+    tier: 2
+    customer_facing: false
+    owner: internal-tools
+    dependencies:
+      - auth
+
+  billing-batch:
+    tier: 3
+    customer_facing: false
+    owner: finance
+    dependencies:
+      - payments
+
+defaults:
+  tier: 2
+  customer_facing: false
+  owner: unknown
