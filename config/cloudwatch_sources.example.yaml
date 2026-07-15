@@ -1,0 +1,36 @@
+version: cloudwatch-source-map/v1
+
+# Credentials are intentionally absent. Use an AWS role with the smallest
+# read-only policy AWS supports for these actions in the deployed runtime.
+alarms:
+  checkout-high-error-rate:
+    service: checkout
+    environment: production
+    severity: critical
+
+services:
+  checkout:
+    log_groups:
+      - /aws/example/checkout
+    metrics:
+      error_rate:
+        namespace: Example/Application
+        metric_name: ErrorRate
+        statistic: Average
+        period_seconds: 60
+        dimensions:
+          ServiceName: checkout
+      latency_p95_ms:
+        namespace: Example/Application
+        metric_name: LatencyP95Milliseconds
+        statistic: Average
+        period_seconds: 60
+        dimensions:
+          ServiceName: checkout
+      request_rate_rps:
+        namespace: Example/Application
+        metric_name: RequestRate
+        statistic: Average
+        period_seconds: 60
+        dimensions:
+          ServiceName: checkout

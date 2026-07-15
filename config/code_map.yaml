@@ -1,0 +1,52 @@
+# Field data mapping. Translates opaque codes appearing in log
+# messages into human-readable explanations. Hayabusa-inspired
+# (0xc0000234 -> ACCOUNT LOCKED) but adapted to SRE domain.
+
+codes:
+
+  http:
+    "429": "Too Many Requests — rate limited"
+    "500": "Internal Server Error"
+    "502": "Bad Gateway — upstream failed"
+    "503": "Service Unavailable — capacity or dep down"
+    "504": "Gateway Timeout — upstream slow"
+
+  k8s_exit:
+    "1":   "Generic app error"
+    "137": "OOMKilled (SIGKILL by kernel, usually memory)"
+    "139": "Segmentation fault"
+    "143": "SIGTERM (graceful shutdown)"
+
+  postgres:
+    "08006": "connection failure"
+    "23505": "unique constraint violation"
+    "40001": "serialization failure — retry candidate"
+    "40P01": "deadlock detected"
+    "53300": "too many connections"
+    "57014": "query canceled — timeout"
+
+  mysql:
+    "1040": "too many connections"
+    "1213": "deadlock detected"
+    "2006": "server has gone away"
+    "2013": "lost connection during query"
+
+  redis:
+    "OOM": "Out of memory — maxmemory reached"
+    "READONLY": "replica set to read-only, wrong node"
+    "LOADING": "loading dataset in memory"
+
+# Regex patterns that decode dynamic error strings
+patterns:
+  - regex: "HTTP\\s+(\\d{3})"
+    lookup: http
+    label: HTTP
+  - regex: "exit code[:\\s]+(\\d+)"
+    lookup: k8s_exit
+    label: k8s exit
+  - regex: "SQLSTATE[\\[(]([0-9A-Z]{5})[\\])]"
+    lookup: postgres
+    label: Postgres
+  - regex: "ERROR (\\d{4})"
+    lookup: mysql
+    label: MySQL
