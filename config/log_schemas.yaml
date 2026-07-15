@@ -1,0 +1,120 @@
+# Log field normalization. Different sources call the same thing
+# by different names. This config maps every source's fields to
+# our canonical schema. Order in each list = preference order.
+#
+# Canonical schema (target):
+#   service, level, error_type, trace_id, user_id,
+#   request_id, commit_sha, pod, host, workload_id,
+#   execution_id, message
+
+canonical_fields:
+  - service
+  - level
+  - error_type
+  - trace_id
+  - user_id
+  - request_id
+  - commit_sha
+  - pod
+  - host
+  - route
+  - dependency
+  - region
+  - event_name
+  - error_fingerprint
+  - status_code
+  - workload_id
+  - execution_id
+
+schemas:
+
+  loki_default:
+    service:
+      - service
+      - app
+      - kubernetes_container_name
+      - container_name
+    level:
+      - level
+      - severity
+      - log_level
+      - loglevel
+    error_type:
+      - error_type
+      - error_code
+      - exception_class
+      - err_type
+    trace_id:
+      - trace_id
+      - traceId
+      - trace
+      - x-trace-id
+    user_id:
+      - user_id
+      - userId
+      - uid
+    request_id:
+      - request_id
+      - requestId
+      - req_id
+      - x-request-id
+    commit_sha:
+      - commit
+      - commit_sha
+      - git_sha
+      - version
+    pod:
+      - pod
+      - pod_name
+      - kubernetes_pod_name
+    host:
+      - host
+      - hostname
+      - node
+    route:
+      - route
+      - http_route
+      - path_template
+      - handler
+    dependency:
+      - dependency
+      - upstream_service
+      - peer_service
+      - target_service
+    region:
+      - region
+      - cloud_region
+      - zone
+    event_name:
+      - event_name
+      - event
+      - log_event
+    error_fingerprint:
+      - error_fingerprint
+      - error_signature
+      - exception_fingerprint
+    status_code:
+      - status_code
+      - http_status_code
+      - code
+    workload_id:
+      - workload_id
+    execution_id:
+      - execution_id
+
+  cloudwatch:
+    service:
+      - logGroup
+      - serviceName
+      - service
+    level:
+      - level
+      - priority
+      - severity
+
+# Normalize level values to a fixed vocabulary
+level_synonyms:
+  error: [error, err, fatal, crit, critical]
+  warn: [warn, warning]
+  info: [info, information, notice]
+  debug: [debug, trace, verbose]

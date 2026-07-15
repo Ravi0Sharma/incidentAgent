@@ -1,0 +1,130 @@
+version: 1
+
+datasets:
+  loghub_hadoop:
+    status: approved_for_local_offline_evaluation
+    owner: incident-agent-poc
+    source_repository: https://github.com/logpai/loghub
+    dataset_documentation: https://github.com/logpai/loghub/blob/master/Hadoop/README.md
+    default_local_path: ../Hadoop
+    intended_use:
+      - per_application_incident_segmentation
+      - multi_container_log_reduction
+      - normal_abnormal_evaluation
+      - failure_type_holdout_evaluation
+    prohibited_claims:
+      - production_representativeness
+      - root_cause_accuracy_without_case_review
+    label_policy: >-
+      Workload and failure labels are evaluation truth only and must never be
+      included in alert, log, grouping, detection, scoring, or LLM input.
+    timestamp_policy: >-
+      The dataset does not declare timezone. Parse timestamps as assumed UTC
+      only for relative ordering inside each application.
+    retention: user_managed_local_folder
+
+  loghub_hdfs_2k:
+    status: approved_for_local_robustness_evaluation
+    owner: incident-agent-poc
+    source_repository: https://github.com/logpai/loghub
+    dataset_documentation: https://github.com/logpai/loghub/blob/master/HDFS/README.md
+    structured_log_url: https://raw.githubusercontent.com/logpai/loghub/master/HDFS/HDFS_2k.log_structured.csv
+    upstream_readme_url: https://raw.githubusercontent.com/logpai/loghub/master/HDFS/README.md
+    upstream_license_url: https://raw.githubusercontent.com/logpai/loghub/master/LICENSE
+    local_path: data/external/raw/loghub_hdfs_2k/HDFS_2k.log_structured.csv
+    intended_use:
+      - parsing_robustness
+      - timestamp_normalization
+      - sampling_coverage
+      - aggregation_collision_measurement
+    prohibited_claims:
+      - root_cause_accuracy
+      - causal_training_labels
+      - production_representativeness
+    usage_note: >-
+      LogHub describes its datasets as freely available for research or
+      academic work and warns that datasets may not be sanitized or
+      anonymized. Accept the upstream terms explicitly before downloading.
+    retention: local_only_delete_when_no_longer_needed
+
+  loghub_spark_2k:
+    status: approved_for_local_robustness_evaluation
+    priority_status: parked_unless_spark_enters_target_environment
+    owner: incident-agent-poc
+    source_repository: https://github.com/logpai/loghub
+    dataset_documentation: https://github.com/logpai/loghub/tree/master/Spark
+    raw_log_url: https://raw.githubusercontent.com/logpai/loghub/master/Spark/Spark_2k.log
+    structured_log_url: https://raw.githubusercontent.com/logpai/loghub/master/Spark/Spark_2k.log_structured.csv
+    template_url: https://raw.githubusercontent.com/logpai/loghub/master/Spark/Spark_2k.log_templates.csv
+    upstream_readme_url: https://raw.githubusercontent.com/logpai/loghub/master/Spark/README.md
+    upstream_license_url: https://raw.githubusercontent.com/logpai/loghub/master/LICENSE
+    local_path: data/external/raw/loghub_spark_2k/Spark_2k.log_structured.csv
+    intended_use:
+      - multiline_and_concatenated_event_parsing
+      - distributed_job_log_sampling
+      - grouping_fragmentation_and_collision_measurement
+      - observation_only_signal_generalization
+    prohibited_claims:
+      - incident_root_cause_accuracy
+      - anomaly_detection_accuracy
+      - production_representativeness
+    label_policy: >-
+      Upstream EventId/template fields are evaluation truth only. They must not
+      enter normalized records, grouping keys, detections, candidates, or model
+      context.
+    timestamp_policy: >-
+      The sample does not declare timezone. Parse timestamps as assumed UTC for
+      source-relative ordering only.
+    usage_note: >-
+      LogHub describes the full Spark corpus as aggregated machine-level logs
+      with some lost machine logs and no normal/abnormal labels. The 2k sample
+      is a parsing/grouping robustness corpus, not an incident gold set.
+    retention: local_only_delete_when_no_longer_needed
+
+  loghub_hdfs_v1:
+    status: approved_for_local_offline_evaluation
+    owner: incident-agent-poc
+    source_repository: https://github.com/logpai/loghub
+    dataset_documentation: https://github.com/logpai/loghub/tree/master/HDFS
+    default_local_path: ../HDFS_v1
+    intended_use:
+      - block_scoped_normal_anomaly_holdout
+      - storage_signal_retention
+      - impact_contract_generalization
+    prohibited_claims:
+      - root_cause_accuracy
+      - production_representativeness
+    label_policy: >-
+      Block normal/anomaly labels are selection and post-review scoring data
+      only. They must not enter records, pipeline state, candidates, or model
+      input.
+    retention: user_managed_local_folder
+
+  loghub_openstack:
+    status: approved_for_local_offline_evaluation
+    owner: incident-agent-poc
+    source_repository: https://github.com/logpai/loghub
+    dataset_documentation: https://github.com/logpai/loghub/tree/master/OpenStack
+    default_local_path: ../OpenStack
+    intended_use:
+      - instance_scoped_normal_anomaly_holdout
+      - lifecycle_and_duration_features
+      - impact_contract_generalization
+    prohibited_claims:
+      - root_cause_accuracy
+      - injected_fault_type_accuracy
+      - production_representativeness
+    label_policy: >-
+      The four injected-anomaly instance IDs and normal file membership are
+      selection and post-review scoring data only. Raw UUIDs are minimized
+      before pipeline processing.
+    retention: user_managed_local_folder
+
+rejected_or_restricted:
+  nasa_http_access:
+    status: not_selected
+    source: https://ita.ee.lbl.gov/html/contrib/NASA-HTTP.html
+    reason: >-
+      The archive asks users not to study users or users' behavior beyond
+      general traffic-pattern analysis, which is too restrictive and unrelated
+      to incident-correlation evaluation.
