@@ -1,0 +1,203 @@
+{
+  "schema_version": "grouping-contract/v1",
+  "description": "Project-reviewed complements for operational distinctions absent from the public HDFS template corpus.",
+  "cases": [
+    {
+      "case_id": "application-log-boundaries",
+      "records": [
+        {
+          "source_event_label": "dependency-timeout",
+          "timestamp": "2026-07-29T10:00:01Z",
+          "message": "dependency timeout request_id=req-a duration_ms=1200",
+          "labels": {"service": "checkout", "level": "error"}
+        },
+        {
+          "source_event_label": "dependency-timeout",
+          "timestamp": "2026-07-29T10:00:02Z",
+          "message": "dependency timeout request_id=req-b duration_ms=2400",
+          "labels": {"service": "checkout", "level": "error"}
+        },
+        {
+          "source_event_label": "sql-connectivity",
+          "timestamp": "2026-07-29T10:00:03Z",
+          "message": "database request failed SQLSTATE[08001] request_id=db-a",
+          "labels": {"service": "checkout", "level": "error"}
+        },
+        {
+          "source_event_label": "sql-connectivity",
+          "timestamp": "2026-07-29T10:00:04Z",
+          "message": "database request failed SQLSTATE[08001] request_id=db-b",
+          "labels": {"service": "checkout", "level": "error"}
+        },
+        {
+          "source_event_label": "sql-unique-violation",
+          "timestamp": "2026-07-29T10:00:05Z",
+          "message": "database request failed SQLSTATE[23505] request_id=db-c",
+          "labels": {"service": "checkout", "level": "error"}
+        },
+        {
+          "source_event_label": "sql-unique-violation",
+          "timestamp": "2026-07-29T10:00:06Z",
+          "message": "database request failed SQLSTATE[23505] request_id=db-d",
+          "labels": {"service": "checkout", "level": "error"}
+        },
+        {
+          "source_event_label": "http-500",
+          "timestamp": "2026-07-29T10:00:07Z",
+          "message": "upstream returned HTTP status 500 request_id=http-a",
+          "labels": {"service": "gateway", "level": "error"}
+        },
+        {
+          "source_event_label": "http-500",
+          "timestamp": "2026-07-29T10:00:08Z",
+          "message": "upstream returned HTTP status 500 request_id=http-b",
+          "labels": {"service": "gateway", "level": "error"}
+        },
+        {
+          "source_event_label": "http-503",
+          "timestamp": "2026-07-29T10:00:09Z",
+          "message": "upstream returned HTTP status 503 request_id=http-c",
+          "labels": {"service": "gateway", "level": "error"}
+        },
+        {
+          "source_event_label": "http-503",
+          "timestamp": "2026-07-29T10:00:10Z",
+          "message": "upstream returned HTTP status 503 request_id=http-d",
+          "labels": {"service": "gateway", "level": "error"}
+        },
+        {
+          "source_event_label": "checkout-timeout",
+          "timestamp": "2026-07-29T10:00:11Z",
+          "message": "operation timeout after 30 seconds",
+          "labels": {"service": "checkout", "level": "error"}
+        },
+        {
+          "source_event_label": "checkout-timeout",
+          "timestamp": "2026-07-29T10:00:12Z",
+          "message": "operation timeout after 60 seconds",
+          "labels": {"service": "checkout", "level": "error"}
+        },
+        {
+          "source_event_label": "payments-timeout",
+          "timestamp": "2026-07-29T10:00:13Z",
+          "message": "operation timeout after 30 seconds",
+          "labels": {"service": "payments", "level": "error"}
+        },
+        {
+          "source_event_label": "payments-timeout",
+          "timestamp": "2026-07-29T10:00:14Z",
+          "message": "operation timeout after 60 seconds",
+          "labels": {"service": "payments", "level": "error"}
+        },
+        {
+          "source_event_label": "host-unreachable",
+          "timestamp": "2026-07-29T10:00:15Z",
+          "message": "socket failed error_code=EHOSTUNREACH peer=node-a",
+          "labels": {"service": "worker", "level": "error"}
+        },
+        {
+          "source_event_label": "host-unreachable",
+          "timestamp": "2026-07-29T10:00:16Z",
+          "message": "socket failed error_code=EHOSTUNREACH peer=node-b",
+          "labels": {"service": "worker", "level": "error"}
+        },
+        {
+          "source_event_label": "connection-reset",
+          "timestamp": "2026-07-29T10:00:17Z",
+          "message": "socket failed error_code=ECONNRESET peer=node-c",
+          "labels": {"service": "worker", "level": "error"}
+        },
+        {
+          "source_event_label": "connection-reset",
+          "timestamp": "2026-07-29T10:00:18Z",
+          "message": "socket failed error_code=ECONNRESET peer=node-d",
+          "labels": {"service": "worker", "level": "error"}
+        },
+        {
+          "source_event_label": "long-prefix-connection",
+          "timestamp": "2026-07-29T10:00:19Z",
+          "message": "java wrapper context context context context context context context context context context context context context context context context context context context context context context context connection refused by peer 101",
+          "labels": {"service": "worker", "level": "error"}
+        },
+        {
+          "source_event_label": "long-prefix-connection",
+          "timestamp": "2026-07-29T10:00:20Z",
+          "message": "java wrapper context context context context context context context context context context context context context context context context context context context context context context context connection refused by peer 202",
+          "labels": {"service": "worker", "level": "error"}
+        },
+        {
+          "source_event_label": "long-prefix-checksum",
+          "timestamp": "2026-07-29T10:00:21Z",
+          "message": "java wrapper context context context context context context context context context context context context context context context context context context context context context context context checksum mismatch for block 101",
+          "labels": {"service": "worker", "level": "error"}
+        },
+        {
+          "source_event_label": "long-prefix-checksum",
+          "timestamp": "2026-07-29T10:00:22Z",
+          "message": "java wrapper context context context context context context context context context context context context context context context context context context context context context context context checksum mismatch for block 202",
+          "labels": {"service": "worker", "level": "error"}
+        },
+        {
+          "source_event_label": "instance-spawned",
+          "timestamp": "2026-07-29T10:00:23Z",
+          "message": "Instance spawned successfully.",
+          "labels": {"service": "openstack", "level": "info"}
+        },
+        {
+          "source_event_label": "instance-spawned",
+          "timestamp": "2026-07-29T10:00:24Z",
+          "message": "Instance spawned successfully.",
+          "labels": {"service": "openstack", "level": "info", "host": "compute-2"}
+        },
+        {
+          "source_event_label": "instance-destroyed",
+          "timestamp": "2026-07-29T10:00:25Z",
+          "message": "Instance destroyed successfully.",
+          "labels": {"service": "openstack", "level": "info"}
+        },
+        {
+          "source_event_label": "instance-destroyed",
+          "timestamp": "2026-07-29T10:00:26Z",
+          "message": "Instance destroyed successfully.",
+          "labels": {"service": "openstack", "level": "info", "host": "compute-2"}
+        },
+        {
+          "source_event_label": "instruction-address",
+          "timestamp": "2026-07-29T10:00:27Z",
+          "message": "instruction address: 0x0000df30",
+          "labels": {"service": "bgl", "level": "error", "event_name": "RAS"}
+        },
+        {
+          "source_event_label": "instruction-address",
+          "timestamp": "2026-07-29T10:00:28Z",
+          "message": "instruction address: 0x000022f0",
+          "labels": {"service": "bgl", "level": "error", "event_name": "RAS"}
+        },
+        {
+          "source_event_label": "l3-edram-corrected",
+          "timestamp": "2026-07-29T10:00:29Z",
+          "message": "10422649 L3 EDRAM error(s) (dcr 0x0157) detected and corrected",
+          "labels": {"service": "bgl", "level": "info", "event_name": "RAS"}
+        },
+        {
+          "source_event_label": "l3-edram-corrected",
+          "timestamp": "2026-07-29T10:00:30Z",
+          "message": "7 L3 EDRAM error(s) (dcr 0x0157) detected and corrected",
+          "labels": {"service": "bgl", "level": "info", "event_name": "RAS"}
+        },
+        {
+          "source_event_label": "openstack-pending-spawn",
+          "timestamp": "2026-07-29T10:00:31Z",
+          "message": "[req-[UUID] - - - - -] [instance: [UUID]] During sync_power_state the instance has a pending task (spawning). Skip.",
+          "labels": {"service": "openstack", "level": "info"}
+        },
+        {
+          "source_event_label": "openstack-pending-spawn",
+          "timestamp": "2026-07-29T10:00:32Z",
+          "message": "[-] [instance: [UUID]] During sync_power_state the instance has a pending task (spawning). Skip.",
+          "labels": {"service": "openstack", "level": "info"}
+        }
+      ]
+    }
+  ]
+}

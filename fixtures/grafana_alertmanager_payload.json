@@ -1,0 +1,37 @@
+{
+  "receiver": "incident-agent",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighPaymentLatency",
+        "service": "payments",
+        "severity": "critical",
+        "namespace": "production",
+        "cluster": "eu-west-1",
+        "team": "platform"
+      },
+      "annotations": {
+        "summary": "Payment latency p95 above 5s for 3 minutes",
+        "description": "The payments service p95 latency has been above 5000ms for the past 3 minutes, well above the 500ms SLO. Users are experiencing slow checkouts."
+      },
+      "startsAt": "2026-07-14T10:03:12.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://grafana.example.com/d/abc/payment-latency?viewPanel=3",
+      "fingerprint": "INC-abc123def456"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "HighPaymentLatency"
+  },
+  "commonLabels": {
+    "alertname": "HighPaymentLatency",
+    "service": "payments",
+    "severity": "critical"
+  },
+  "commonAnnotations": {},
+  "externalURL": "https://alertmanager.example.com",
+  "version": "4",
+  "groupKey": "{}:{alertname=\"HighPaymentLatency\"}"
+}
