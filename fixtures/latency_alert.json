@@ -1,0 +1,13 @@
+{
+  "incident_id": "INC-1001",
+  "alertname": "PaymentsDatabasePoolExhausted",
+  "service": "payments",
+  "severity": "critical",
+  "message": "payment latency above 5 seconds after a database pool configuration rollout",
+  "received_at": "2026-07-22T12:01:00Z",
+  "labels": {
+    "service": "payments",
+    "severity": "critical",
+    "environment": "local"
+  }
+}
