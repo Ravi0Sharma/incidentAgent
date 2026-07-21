@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "incident_agent": "./graph/workflow.py:graph_for_studio"
+  },
+  "env": ".env"
+}
