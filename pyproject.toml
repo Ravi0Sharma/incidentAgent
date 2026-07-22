@@ -1,0 +1,38 @@
+[tool.ruff]
+target-version = "py311"
+extend-exclude = [
+  ".venv",
+  ".langgraph_api",
+  ".phoenix_data",
+  "data",
+  "output",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# These executable scripts add the repository root to sys.path before local
+# imports. Keep that bootstrap visible and explicitly scoped.
+"scripts/*.py" = ["E402"]
+# Tracing must initialize before importing graph nodes so instrumentation sees
+# their construction.
+"graph/workflow.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+show_error_codes = true
+warn_unused_configs = true
+
+[tool.coverage.run]
+branch = true
+source = ["clients", "graph", "utils", "webhook"]
+omit = [
+  "*/__init__.py",
+  "tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+precision = 1
+
