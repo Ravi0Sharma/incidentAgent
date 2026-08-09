@@ -1,0 +1,940 @@
+"""MySQL append-only incident event, revision, queue, and dead-letter store."""
+
+import hashlib
+import json
+from datetime import datetime, timedelta, timezone
+
+import pymysql
+
+from settings import (
+    ANALYSIS_CODE_VERSION,
+    MYSQL_DATABASE,
+    MYSQL_HOST,
+    MYSQL_PASSWORD,
+    MYSQL_PORT,
+    MYSQL_USER,
+    OPENAI_MODEL,
+    PROMPT_VERSION,
+)
+from utils.redaction import redact_data
+from utils.config_versions import config_version_manifest
+
+
+class EvidenceIntegrityError(ValueError):
+    """Stored evidence no longer matches the immutable reviewed snapshot."""
+
+
+def _connection():
+    return pymysql.connect(
+        host=MYSQL_HOST,
+        port=MYSQL_PORT,
+        user=MYSQL_USER,
+        password=MYSQL_PASSWORD,
+        database=MYSQL_DATABASE,
+        charset="utf8mb4",
+        autocommit=False,
+    )
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _json(value):
+    return json.dumps(redact_data(value), default=str, separators=(",", ":"))
+
+
+def _decode(value):
+    return value if isinstance(value, (dict, list)) else json.loads(value)
+
+
+def default_run_context():
+    return {
+        "code_version": ANALYSIS_CODE_VERSION,
+        "prompt_version": PROMPT_VERSION,
+        "model_version": OPENAI_MODEL,
+        "pipeline_config": config_version_manifest(),
+    }
+
+
+def complete_run_context(value=None):
+    return {
+        **default_run_context(),
+        **(value or {}),
+    }
+
+
+def _add_column_if_missing(cur, table, column, definition):
+    cur.execute(
+        "SELECT 1 FROM information_schema.columns WHERE table_schema=%s "
+        "AND table_name=%s AND column_name=%s",
+        (MYSQL_DATABASE, table, column),
+    )
+    if not cur.fetchone():
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+
+
+def ensure_schema():
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_events ("
+            "event_id BIGINT AUTO_INCREMENT PRIMARY KEY, incident_id VARCHAR(128) NOT NULL, "
+            "idempotency_key CHAR(64) NOT NULL UNIQUE, event_type VARCHAR(64) NOT NULL, "
+            "event_time DATETIME(6) NULL, source_time DATETIME(6) NULL, "
+            "received_at DATETIME(6) NOT NULL, clock_quality VARCHAR(64) NOT NULL, "
+            "payload JSON NOT NULL, INDEX incident_events_timeline (incident_id,event_time,event_id))"
+        )
+        _add_column_if_missing(
+            cur, "incident_events", "clock_quality",
+            "clock_quality VARCHAR(64) NOT NULL DEFAULT 'unverified'",
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_revisions ("
+            "incident_id VARCHAR(128) NOT NULL, revision INT NOT NULL, "
+            "previous_revision INT NULL, reason VARCHAR(255) NOT NULL, execution_context JSON NULL, created_at DATETIME(6) NOT NULL, "
+            "PRIMARY KEY (incident_id, revision))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_revision_heads ("
+            "incident_id VARCHAR(128) PRIMARY KEY, current_revision INT NOT NULL, "
+            "updated_at DATETIME(6) NOT NULL)"
+        )
+        _add_column_if_missing(
+            cur, "incident_revisions", "execution_context", "execution_context JSON NULL"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_analysis_revisions ("
+            "incident_id VARCHAR(128) NOT NULL, revision INT NOT NULL, "
+            "previous_revision INT NULL, event_id BIGINT NULL, "
+            "evidence_ids JSON NOT NULL, candidate_snapshot JSON NOT NULL, "
+            "state_summary JSON NOT NULL, run_context JSON NULL, "
+            "created_at DATETIME(6) NOT NULL, "
+            "PRIMARY KEY (incident_id,revision))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_evidence_records ("
+            "evidence_record_id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+            "incident_id VARCHAR(128) NOT NULL, evidence_id VARCHAR(255) NOT NULL, "
+            "evidence_type VARCHAR(64) NOT NULL, version INT NOT NULL, "
+            "content_sha256 CHAR(64) NOT NULL, payload JSON NOT NULL, "
+            "supersedes_record_id BIGINT NULL, first_analysis_revision INT NOT NULL, "
+            "created_at DATETIME(6) NOT NULL, "
+            "UNIQUE KEY incident_evidence_version (incident_id,evidence_id,version), "
+            "UNIQUE KEY incident_evidence_content (incident_id,evidence_id,content_sha256), "
+            "INDEX incident_evidence_lookup (incident_id,evidence_id,evidence_record_id))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_analysis_evidence ("
+            "incident_id VARCHAR(128) NOT NULL, analysis_revision INT NOT NULL, "
+            "evidence_id VARCHAR(255) NOT NULL, evidence_record_id BIGINT NOT NULL, "
+            "PRIMARY KEY (incident_id,analysis_revision,evidence_id), "
+            "INDEX analysis_evidence_record (evidence_record_id))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_review_decisions ("
+            "decision_id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+            "decision_key CHAR(64) NOT NULL UNIQUE, incident_id VARCHAR(128) NOT NULL, "
+            "analysis_revision INT NULL, pending_revision INT NOT NULL, "
+            "reviewer_identity VARCHAR(255) NOT NULL, decision VARCHAR(32) NOT NULL, "
+            "selected_hypothesis VARCHAR(128) NULL, displayed_evidence_ids JSON NOT NULL, "
+            "rationale TEXT NOT NULL, request_id VARCHAR(128) NULL, "
+            "created_at DATETIME(6) NOT NULL, "
+            "INDEX incident_review_timeline (incident_id,created_at))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_postmortem_drafts ("
+            "draft_id BIGINT AUTO_INCREMENT PRIMARY KEY, incident_id VARCHAR(128) NOT NULL, "
+            "analysis_revision INT NULL, version INT NOT NULL, content MEDIUMTEXT NOT NULL, "
+            "content_sha256 CHAR(64) NOT NULL, source VARCHAR(32) NOT NULL, "
+            "editor_identity VARCHAR(255) NULL, supersedes_draft_id BIGINT NULL, "
+            "created_at DATETIME(6) NOT NULL, "
+            "UNIQUE KEY incident_postmortem_version (incident_id,version))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_jobs ("
+            "job_id BIGINT AUTO_INCREMENT PRIMARY KEY, job_key CHAR(64) NOT NULL UNIQUE, "
+            "incident_id VARCHAR(128) NOT NULL, event_id BIGINT NOT NULL, kind VARCHAR(32) NOT NULL, "
+            "status VARCHAR(32) NOT NULL, attempt_count INT NOT NULL DEFAULT 0, "
+            "available_at DATETIME(6) NOT NULL, leased_until DATETIME(6) NULL, worker_id VARCHAR(128) NULL, "
+            "payload JSON NOT NULL, run_context JSON NULL, last_error JSON NULL, created_at DATETIME(6) NOT NULL, "
+            "updated_at DATETIME(6) NOT NULL, INDEX incident_jobs_claim (status,available_at,leased_until), "
+            "INDEX incident_jobs_incident (incident_id,job_id))"
+        )
+        _add_column_if_missing(cur, "incident_jobs", "run_context", "run_context JSON NULL")
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_dead_letters ("
+            "dead_letter_id BIGINT AUTO_INCREMENT PRIMARY KEY, job_id BIGINT NOT NULL UNIQUE, "
+            "incident_id VARCHAR(128) NOT NULL, event_id BIGINT NOT NULL, kind VARCHAR(32) NOT NULL, "
+            "payload JSON NOT NULL, diagnostics JSON NOT NULL, failed_at DATETIME(6) NOT NULL, "
+            "replayed_at DATETIME(6) NULL)"
+        )
+        conn.commit()
+
+
+def readiness_check():
+    """Verify that the configured durable store is reachable and schema-ready."""
+    try:
+        ensure_schema()
+        with _connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            conn.commit()
+        return {"database": "ready", "queue": "ready", "schema": "ready"}
+    except pymysql.MySQLError as exc:
+        return {"database": "unavailable", "queue": "unavailable", "schema": "unknown", "error": str(exc)}
+
+
+def _insert_event(cur, incident_id, idempotency_key, event_type, payload, event_time, source_time, clock_quality):
+    received_at = _now()
+    try:
+        cur.execute(
+            "INSERT INTO incident_events "
+            "(incident_id,idempotency_key,event_type,event_time,source_time,received_at,clock_quality,payload) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                incident_id,
+                idempotency_key,
+                event_type,
+                event_time,
+                source_time,
+                received_at,
+                clock_quality,
+                _json(payload),
+            ),
+        )
+        return True, cur.lastrowid, received_at
+    except pymysql.err.IntegrityError:
+        cur.execute("SELECT event_id, received_at FROM incident_events WHERE idempotency_key=%s", (idempotency_key,))
+        row = cur.fetchone()
+        return False, row[0], row[1]
+
+
+def record_event(incident_id, idempotency_key, event_type, payload, event_time=None, source_time=None, clock_quality="unverified"):
+    """Append exactly one redacted normalized event without queueing work."""
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        inserted, event_id, received_at = _insert_event(
+            cur, incident_id, idempotency_key, event_type, payload, event_time, source_time, clock_quality
+        )
+        conn.commit()
+    return {"inserted": inserted, "event_id": event_id, "received_at": received_at.isoformat()}
+
+
+def _job_key(event_id, kind, salt=""):
+    return hashlib.sha256(f"{kind}:{event_id}:{salt}".encode("utf-8")).hexdigest()
+
+
+def record_event_and_enqueue(incident_id, idempotency_key, event_type, payload, event_time=None, source_time=None, clock_quality="unverified", run_context=None):
+    """Atomically append a new event and its durable analysis job before ACK."""
+    ensure_schema()
+    now = _now()
+    with _connection() as conn, conn.cursor() as cur:
+        inserted, event_id, received_at = _insert_event(
+            cur, incident_id, idempotency_key, event_type, payload, event_time, source_time, clock_quality
+        )
+        if not inserted:
+            conn.commit()
+            return {"inserted": False, "event_id": event_id, "queued": False, "received_at": received_at.isoformat()}
+        key = _job_key(event_id, "analyze")
+        cur.execute(
+            "INSERT INTO incident_jobs "
+            "(job_key,incident_id,event_id,kind,status,available_at,payload,run_context,created_at,updated_at) "
+            "VALUES (%s,%s,%s,'analyze','pending',%s,%s,%s,%s,%s)",
+            (key, incident_id, event_id, now, _json(payload), _json(complete_run_context(run_context)), now, now),
+        )
+        job_id = cur.lastrowid
+        conn.commit()
+    return {"inserted": True, "event_id": event_id, "job_id": job_id, "queued": True, "received_at": received_at.isoformat()}
+
+
+def append_event(incident_id, idempotency_key, event_type, payload, event_time=None, source_time=None, clock_quality="unverified"):
+    """Append an audit event that intentionally does not schedule analysis."""
+    return record_event(
+        incident_id,
+        idempotency_key,
+        event_type,
+        payload,
+        event_time=event_time,
+        source_time=source_time,
+        clock_quality=clock_quality,
+    )
+
+
+def create_revision(incident_id, reason, expected_revision=None, run_context=None):
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        # Lock one existing head row instead of a moving MAX(revision) range.
+        # The latter can deadlock when multiple first revisions race in InnoDB.
+        cur.execute(
+            "INSERT INTO incident_revision_heads "
+            "(incident_id,current_revision,updated_at) "
+            "VALUES (%s,0,%s) ON DUPLICATE KEY UPDATE incident_id=VALUES(incident_id)",
+            (incident_id, _now()),
+        )
+        cur.execute(
+            "SELECT current_revision FROM incident_revision_heads "
+            "WHERE incident_id=%s FOR UPDATE",
+            (incident_id,),
+        )
+        current = cur.fetchone()[0]
+        # Backfill a head created after older revision rows without taking a
+        # range lock. New writers are already serialized by the head row.
+        cur.execute(
+            "SELECT COALESCE(MAX(revision),0) FROM incident_revisions "
+            "WHERE incident_id=%s",
+            (incident_id,),
+        )
+        current = max(current, cur.fetchone()[0])
+        if expected_revision is not None and current != expected_revision:
+            conn.rollback()
+            raise ValueError("stale incident revision")
+        revision = current + 1
+        cur.execute(
+            "INSERT INTO incident_revisions "
+            "(incident_id,revision,previous_revision,reason,execution_context,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
+            (incident_id, revision, current or None, reason, _json(complete_run_context(run_context)), _now()),
+        )
+        cur.execute(
+            "UPDATE incident_revision_heads SET current_revision=%s,updated_at=%s "
+            "WHERE incident_id=%s",
+            (revision, _now(), incident_id),
+        )
+        conn.commit()
+        return revision
+
+
+def _canonical_evidence_items(state):
+    """Return bounded evidence items without review-only presentation fields."""
+    timeline = state.get("timeline", []) or []
+    if not timeline:
+        timeline = (state.get("evidence_graph", {}) or {}).get("nodes", []) or []
+    items = []
+    seen = set()
+    for value in timeline:
+        if not isinstance(value, dict) or not value.get("event_id"):
+            continue
+        evidence_id = str(value["event_id"])
+        if evidence_id in seen:
+            continue
+        seen.add(evidence_id)
+        payload = redact_data({
+            key: item
+            for key, item in value.items()
+            if key not in {"_dt", "offset", "is_anchor"}
+        })
+        evidence_type = str(
+            payload.get("type") or payload.get("evidence_type") or "observation"
+        )[:64]
+        digest = _evidence_content_digest(payload)
+        items.append({
+            "evidence_id": evidence_id,
+            "evidence_type": evidence_type,
+            "content_sha256": digest,
+            "payload": payload,
+        })
+    return items
+
+
+def _evidence_content_digest(payload):
+    return hashlib.sha256(
+        json.dumps(
+            redact_data(payload),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _append_analysis_evidence(cur, incident_id, revision, state, now):
+    """Append immutable evidence versions and link the exact analysis snapshot."""
+    for item in _canonical_evidence_items(state):
+        cur.execute(
+            "SELECT evidence_record_id,version,content_sha256 "
+            "FROM incident_evidence_records WHERE incident_id=%s AND evidence_id=%s "
+            "ORDER BY version DESC LIMIT 1 FOR UPDATE",
+            (incident_id, item["evidence_id"]),
+        )
+        previous = cur.fetchone()
+        if previous and previous[2] == item["content_sha256"]:
+            record_id = previous[0]
+        else:
+            version = (previous[1] if previous else 0) + 1
+            cur.execute(
+                "INSERT INTO incident_evidence_records "
+                "(incident_id,evidence_id,evidence_type,version,content_sha256,payload,"
+                "supersedes_record_id,first_analysis_revision,created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    incident_id,
+                    item["evidence_id"],
+                    item["evidence_type"],
+                    version,
+                    item["content_sha256"],
+                    _json(item["payload"]),
+                    previous[0] if previous else None,
+                    revision,
+                    now,
+                ),
+            )
+            record_id = cur.lastrowid
+        cur.execute(
+            "INSERT INTO incident_analysis_evidence "
+            "(incident_id,analysis_revision,evidence_id,evidence_record_id) "
+            "VALUES (%s,%s,%s,%s)",
+            (incident_id, revision, item["evidence_id"], record_id),
+        )
+
+
+def record_analysis_revision(incident_id, revision, state, event_id=None, run_context=None):
+    """Persist the compact, reviewable input boundary for one analysis revision.
+
+    This intentionally stores evidence identifiers and compact deterministic output,
+    not raw logs or a full prompt.  A duplicate call is read back unchanged so a
+    retried worker can never rewrite what a reviewer saw for a revision.
+    """
+    ensure_schema()
+    graph = (state.get("evidence_graph", {}) or {})
+    evidence_ids = sorted({
+        str(node.get("event_id"))
+        for node in graph.get("nodes", [])
+        if isinstance(node, dict) and node.get("event_id")
+    })
+    candidates = []
+    for candidate in ((state.get("deterministic_assessment", {}) or {}).get("candidates", []) or []):
+        if not isinstance(candidate, dict):
+            continue
+        candidates.append({
+            "id": candidate.get("id"),
+            "rank": candidate.get("rank"),
+            "title": candidate.get("title"),
+            "confidence_label": candidate.get("confidence_label"),
+            "score": candidate.get("score"),
+            "event_ids": [str(value) for value in candidate.get("event_ids", []) if value],
+        })
+    summary = {
+        "schema_version": "incident-analysis-revision/v1",
+        "incident_window": state.get("incident_window", {}),
+        "source_status": state.get("source_status", {}),
+        "data_quality": state.get("data_quality", {}),
+        "interpretation_quality": state.get("interpretation_quality", {}),
+        "interpretation_structured": state.get(
+            "interpretation_structured", {}
+        ),
+        "claim_grounding": state.get("claim_grounding", {}),
+        "investigation_loop": state.get("investigation_loop", {}),
+        "investigation_revisions": state.get(
+            "investigation_revisions", []
+        ),
+        "analysis_deadline": state.get("analysis_deadline", {}),
+        "model_usage_ledger": state.get("model_usage_ledger", {}),
+        "evidence_pack_sha256": hashlib.sha256(
+            str(state.get("evidence_pack", "")).encode("utf-8")
+        ).hexdigest(),
+    }
+    now = _now()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT revision FROM incident_analysis_revisions WHERE incident_id=%s "
+            "AND revision=%s FOR UPDATE",
+            (incident_id, revision),
+        )
+        if cur.fetchone():
+            conn.commit()
+            return get_analysis_revision(incident_id, revision)
+        # The incident-revision chain is allocated before analysis and remains
+        # authoritative if a later worker finishes before an earlier one.
+        cur.execute(
+            "SELECT previous_revision FROM incident_revisions "
+            "WHERE incident_id=%s AND revision=%s",
+            (incident_id, revision),
+        )
+        allocated = cur.fetchone()
+        if allocated:
+            previous_revision = allocated[0]
+        else:
+            cur.execute(
+                "SELECT revision FROM incident_analysis_revisions "
+                "WHERE incident_id=%s AND revision<%s "
+                "ORDER BY revision DESC LIMIT 1 FOR UPDATE",
+                (incident_id, revision),
+            )
+            previous = cur.fetchone()
+            previous_revision = previous[0] if previous else None
+        cur.execute(
+            "INSERT INTO incident_analysis_revisions "
+            "(incident_id,revision,previous_revision,event_id,evidence_ids,candidate_snapshot,state_summary,run_context,created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                incident_id, revision, previous_revision, event_id,
+                _json(evidence_ids), _json(candidates), _json(summary),
+                _json(complete_run_context(run_context)), now,
+            ),
+        )
+        _append_analysis_evidence(cur, incident_id, revision, state, now)
+        conn.commit()
+    return get_analysis_revision(incident_id, revision)
+
+
+def get_analysis_revision(incident_id, revision):
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT revision,previous_revision,event_id,evidence_ids,candidate_snapshot,state_summary,run_context,created_at "
+            "FROM incident_analysis_revisions WHERE incident_id=%s AND revision=%s",
+            (incident_id, revision),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "incident_id": incident_id, "revision": row[0], "previous_revision": row[1], "event_id": row[2],
+        "evidence_ids": _decode(row[3]), "candidates": _decode(row[4]),
+        "state_summary": _decode(row[5]), "run_context": _decode(row[6]) if row[6] else {},
+        "created_at": row[7].isoformat(),
+    }
+
+
+def list_evidence_records(incident_id, analysis_revision=None):
+    """Read immutable evidence versions, optionally for one analysis revision."""
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        if analysis_revision is None:
+            cur.execute(
+                "SELECT evidence_record_id,evidence_id,evidence_type,version,content_sha256,"
+                "payload,supersedes_record_id,first_analysis_revision,created_at "
+                "FROM incident_evidence_records WHERE incident_id=%s "
+                "ORDER BY evidence_id,version",
+                (incident_id,),
+            )
+        else:
+            cur.execute(
+                "SELECT r.evidence_record_id,r.evidence_id,r.evidence_type,r.version,"
+                "r.content_sha256,r.payload,r.supersedes_record_id,"
+                "r.first_analysis_revision,r.created_at "
+                "FROM incident_analysis_evidence m JOIN incident_evidence_records r "
+                "ON r.evidence_record_id=m.evidence_record_id "
+                "WHERE m.incident_id=%s AND m.analysis_revision=%s "
+                "ORDER BY r.evidence_id",
+                (incident_id, analysis_revision),
+            )
+        rows = cur.fetchall()
+    records = []
+    for row in rows:
+        payload = _decode(row[5])
+        records.append({
+            "evidence_record_id": row[0],
+            "evidence_id": row[1],
+            "evidence_type": row[2],
+            "version": row[3],
+            "content_sha256": row[4],
+            "payload": payload,
+            "supersedes_record_id": row[6],
+            "first_analysis_revision": row[7],
+            "created_at": row[8].isoformat(),
+            "integrity_valid": _evidence_content_digest(payload) == row[4],
+        })
+    return records
+
+
+def validate_analysis_evidence(incident_id, analysis_revision):
+    """Fail closed unless the exact revision membership is present and intact."""
+    snapshot = get_analysis_revision(incident_id, analysis_revision)
+    if not snapshot:
+        raise EvidenceIntegrityError("analysis revision was not found")
+    records = list_evidence_records(incident_id, analysis_revision)
+    expected = set(snapshot.get("evidence_ids", []) or [])
+    actual = {item["evidence_id"] for item in records}
+    invalid = sorted(
+        item["evidence_id"]
+        for item in records
+        if not item["integrity_valid"]
+    )
+    if expected != actual or invalid:
+        raise EvidenceIntegrityError(
+            "analysis evidence integrity validation failed"
+        )
+    return {
+        "schema_version": "analysis-evidence-integrity/v1",
+        "incident_id": incident_id,
+        "analysis_revision": analysis_revision,
+        "evidence_ids": sorted(actual),
+        "passed": True,
+    }
+
+
+def get_analysis_revision_diff(incident_id, revision):
+    """Explain evidence and candidate changes from the previous revision."""
+    current = get_analysis_revision(incident_id, revision)
+    if not current:
+        return None
+    validate_analysis_evidence(incident_id, revision)
+    previous_revision = current.get("previous_revision")
+    previous = (
+        get_analysis_revision(incident_id, previous_revision)
+        if previous_revision is not None
+        else None
+    )
+    if previous_revision is not None and previous is not None:
+        validate_analysis_evidence(incident_id, previous_revision)
+    current_records = {
+        item["evidence_id"]: item
+        for item in list_evidence_records(incident_id, revision)
+    }
+    previous_records = {
+        item["evidence_id"]: item
+        for item in (
+            list_evidence_records(incident_id, previous_revision)
+            if previous_revision is not None
+            else []
+        )
+    }
+    current_ids = set(current_records)
+    previous_ids = set(previous_records)
+    shared_ids = current_ids & previous_ids
+    changed = sorted(
+        evidence_id
+        for evidence_id in shared_ids
+        if current_records[evidence_id]["evidence_record_id"]
+        != previous_records[evidence_id]["evidence_record_id"]
+    )
+
+    def _candidate_map(snapshot):
+        return {
+            str(item.get("id") or item.get("rank")): item
+            for item in ((snapshot or {}).get("candidates", []) or [])
+            if isinstance(item, dict)
+        }
+
+    before_candidates = _candidate_map(previous)
+    after_candidates = _candidate_map(current)
+    candidate_changes = []
+    for identifier in sorted(set(before_candidates) | set(after_candidates)):
+        before = before_candidates.get(identifier)
+        after = after_candidates.get(identifier)
+        if before != after:
+            candidate_changes.append({
+                "candidate_id": identifier,
+                "before": before,
+                "after": after,
+            })
+    return {
+        "schema_version": "analysis-revision-diff/v1",
+        "incident_id": incident_id,
+        "revision": revision,
+        "previous_revision": previous_revision,
+        "evidence": {
+            "added": sorted(current_ids - previous_ids),
+            "changed": changed,
+            "removed": sorted(previous_ids - current_ids),
+            "unchanged": sorted(shared_ids - set(changed)),
+        },
+        "candidate_changes": candidate_changes,
+    }
+
+
+def record_review_decision(
+    incident_id,
+    pending_revision,
+    decision,
+    reviewer_identity,
+    rationale="",
+    request_id=None,
+    selected_hypothesis=None,
+    analysis_revision=None,
+    candidate_snapshot=None,
+    displayed_evidence_ids=None,
+    enforce_pending=False,
+):
+    """Append an idempotent review decision with the exact evidence snapshot."""
+    if decision not in {
+        "approved", "rejected", "request_more_evidence"
+    }:
+        raise ValueError("invalid review decision")
+    if decision == "request_more_evidence" and not str(rationale).strip():
+        raise ValueError("request_more_evidence requires rationale")
+    snapshot = get_analysis_revision(incident_id, analysis_revision) if analysis_revision else None
+    if analysis_revision is not None and decision == "approved":
+        validate_analysis_evidence(incident_id, analysis_revision)
+    evidence_ids = (snapshot or {}).get("evidence_ids", displayed_evidence_ids or [])
+    candidates = (snapshot or {}).get("candidates", candidate_snapshot or [])
+    permitted = {str(item.get("rank")) for item in candidates if isinstance(item, dict)}
+    selected = str(selected_hypothesis) if selected_hypothesis is not None else None
+    if decision == "approved" and (not selected or selected not in permitted):
+        raise ValueError("selected hypothesis is not present in the reviewed analysis revision")
+    key_material = json.dumps(
+        [incident_id, pending_revision, decision, selected, reviewer_identity, rationale, request_id],
+        sort_keys=True, separators=(",", ":"), default=str,
+    )
+    decision_key = hashlib.sha256(key_material.encode("utf-8")).hexdigest()
+    now = _now()
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        if enforce_pending:
+            cur.execute(
+                "SELECT version FROM pending_reviews "
+                "WHERE thread_id=%s FOR UPDATE",
+                (incident_id,),
+            )
+            pending_row = cur.fetchone()
+            if not pending_row or int(pending_row[0]) != int(pending_revision):
+                conn.rollback()
+                raise ValueError("stale pending-review version")
+            cur.execute(
+                "SELECT decision_id,decision_key,created_at "
+                "FROM incident_review_decisions "
+                "WHERE incident_id=%s AND pending_revision=%s "
+                "ORDER BY decision_id LIMIT 1",
+                (incident_id, pending_revision),
+            )
+            prior = cur.fetchone()
+            if prior:
+                if prior[1] != decision_key:
+                    conn.rollback()
+                    raise ValueError(
+                        "pending review revision was already decided"
+                    )
+                conn.commit()
+                return {
+                    "decision_id": prior[0],
+                    "incident_id": incident_id,
+                    "analysis_revision": analysis_revision,
+                    "pending_revision": pending_revision,
+                    "decision": decision,
+                    "selected_hypothesis": selected,
+                    "displayed_evidence_ids": evidence_ids,
+                    "created_at": prior[2].isoformat(),
+                    "deduplicated": True,
+                }
+        cur.execute(
+            "INSERT INTO incident_review_decisions "
+            "(decision_key,incident_id,analysis_revision,pending_revision,reviewer_identity,decision,selected_hypothesis,displayed_evidence_ids,rationale,request_id,created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON DUPLICATE KEY UPDATE decision_key=VALUES(decision_key)",
+            (decision_key, incident_id, analysis_revision, pending_revision, str(reviewer_identity)[:255], decision,
+             selected, _json(evidence_ids), str(rationale)[:2000], str(request_id)[:128] if request_id else None, now),
+        )
+        cur.execute(
+            "SELECT decision_id,created_at FROM incident_review_decisions WHERE decision_key=%s",
+            (decision_key,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+    return {
+        "decision_id": row[0], "incident_id": incident_id, "analysis_revision": analysis_revision,
+        "pending_revision": pending_revision, "decision": decision, "selected_hypothesis": selected,
+        "displayed_evidence_ids": evidence_ids, "created_at": row[1].isoformat(),
+        "deduplicated": False,
+    }
+
+
+def record_postmortem_draft(incident_id, content, analysis_revision=None, source="generated", editor_identity=None):
+    """Store immutable generated and edited draft versions before any publisher is enabled."""
+    if source not in {"generated", "edited"}:
+        raise ValueError("invalid draft source")
+    text = str(content or "")
+    if not text:
+        raise ValueError("postmortem draft must not be empty")
+    ensure_schema()
+    now = _now()
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT draft_id,version,content_sha256 FROM incident_postmortem_drafts WHERE incident_id=%s "
+            "ORDER BY version DESC LIMIT 1 FOR UPDATE", (incident_id,)
+        )
+        previous = cur.fetchone()
+        if previous and previous[2] == digest:
+            conn.commit()
+            return {"draft_id": previous[0], "incident_id": incident_id, "version": previous[1], "deduplicated": True}
+        version = (previous[1] if previous else 0) + 1
+        cur.execute(
+            "INSERT INTO incident_postmortem_drafts "
+            "(incident_id,analysis_revision,version,content,content_sha256,source,editor_identity,supersedes_draft_id,created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (incident_id, analysis_revision, version, text, digest, source,
+             str(editor_identity)[:255] if editor_identity else None, previous[0] if previous else None, now),
+        )
+        draft_id = cur.lastrowid
+        conn.commit()
+    return {"draft_id": draft_id, "incident_id": incident_id, "version": version, "deduplicated": False}
+
+
+def list_postmortem_drafts(incident_id):
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT draft_id,analysis_revision,version,content,content_sha256,source,editor_identity,supersedes_draft_id,created_at "
+            "FROM incident_postmortem_drafts WHERE incident_id=%s ORDER BY version", (incident_id,)
+        )
+        rows = cur.fetchall()
+    return [
+        {"draft_id": row[0], "analysis_revision": row[1], "version": row[2], "content": row[3],
+         "content_sha256": row[4], "source": row[5], "editor_identity": row[6],
+         "supersedes_draft_id": row[7], "created_at": row[8].isoformat()}
+        for row in rows
+    ]
+
+
+def list_events(incident_id):
+    """Return the audit timeline sorted by event time while preserving arrival order."""
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT event_id,event_type,event_time,source_time,received_at,clock_quality,payload "
+            "FROM incident_events WHERE incident_id=%s "
+            "ORDER BY COALESCE(event_time,received_at), event_id",
+            (incident_id,),
+        )
+        rows = cur.fetchall()
+    return [
+        {
+            "event_id": row[0], "event_type": row[1],
+            "event_time": row[2].isoformat() if row[2] else None,
+            "source_time": row[3].isoformat() if row[3] else None,
+            "received_at": row[4].isoformat(), "clock_quality": row[5],
+            "payload": _decode(row[6]),
+        }
+        for row in rows
+    ]
+
+
+def claim_next_job(worker_id, lease_seconds=120):
+    """Lease a pending job. MySQL row locks prevent two workers claiming it."""
+    ensure_schema()
+    now = _now()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT job_id FROM incident_jobs WHERE "
+            "(status='pending' AND available_at<=%s) OR (status='leased' AND leased_until<%s) "
+            "ORDER BY job_id LIMIT 1 FOR UPDATE SKIP LOCKED",
+            (now, now),
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.commit()
+            return None
+        lease_until = now + timedelta(seconds=lease_seconds)
+        cur.execute(
+            "UPDATE incident_jobs SET status='leased',attempt_count=attempt_count+1,worker_id=%s,"
+            "leased_until=%s,updated_at=%s WHERE job_id=%s",
+            (worker_id, lease_until, now, row[0]),
+        )
+        cur.execute(
+            "SELECT job_id,incident_id,event_id,kind,attempt_count,payload,run_context FROM incident_jobs WHERE job_id=%s",
+            (row[0],),
+        )
+        job = cur.fetchone()
+        conn.commit()
+    return {
+        "job_id": job[0], "incident_id": job[1], "event_id": job[2], "kind": job[3],
+        "attempt_count": job[4], "payload": _decode(job[5]), "run_context": _decode(job[6]) if job[6] else default_run_context(),
+    }
+
+
+def complete_job(job_id, worker_id):
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE incident_jobs SET status='completed',leased_until=NULL,updated_at=%s "
+            "WHERE job_id=%s AND status='leased' AND worker_id=%s",
+            (_now(), job_id, worker_id),
+        )
+        if not cur.rowcount:
+            conn.rollback()
+            raise ValueError("job lease is not owned by this worker")
+        conn.commit()
+
+
+def fail_job(job, worker_id, error, max_attempts=3, retry_delay_seconds=30):
+    """Retry transient failures; preserve exhausted jobs in a redacted dead letter."""
+    ensure_schema()
+    now = _now()
+    diagnostics = redact_data({"error": str(error), "attempt": job["attempt_count"]})
+    with _connection() as conn, conn.cursor() as cur:
+        if job["attempt_count"] >= max_attempts:
+            cur.execute(
+                "UPDATE incident_jobs SET status='dead_letter',leased_until=NULL,last_error=%s,updated_at=%s "
+                "WHERE job_id=%s AND status='leased' AND worker_id=%s",
+                (_json(diagnostics), now, job["job_id"], worker_id),
+            )
+            cur.execute(
+                "INSERT INTO incident_dead_letters "
+                "(job_id,incident_id,event_id,kind,payload,diagnostics,failed_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE diagnostics=VALUES(diagnostics),failed_at=VALUES(failed_at)",
+                (job["job_id"], job["incident_id"], job["event_id"], job["kind"], _json(job["payload"]), _json(diagnostics), now),
+            )
+            outcome = "dead_letter"
+        else:
+            cur.execute(
+                "UPDATE incident_jobs SET status='pending',worker_id=NULL,leased_until=NULL,"
+                "available_at=%s,last_error=%s,updated_at=%s WHERE job_id=%s AND status='leased' AND worker_id=%s",
+                (now + timedelta(seconds=retry_delay_seconds), _json(diagnostics), now, job["job_id"], worker_id),
+            )
+            outcome = "retry"
+        if not cur.rowcount:
+            conn.rollback()
+            raise ValueError("job lease is not owned by this worker")
+        conn.commit()
+    return outcome
+
+
+def list_dead_letters(incident_id=None):
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        if incident_id:
+            cur.execute("SELECT job_id,incident_id,event_id,kind,payload,diagnostics,failed_at FROM incident_dead_letters WHERE incident_id=%s", (incident_id,))
+        else:
+            cur.execute("SELECT job_id,incident_id,event_id,kind,payload,diagnostics,failed_at FROM incident_dead_letters ORDER BY failed_at DESC")
+        rows = cur.fetchall()
+    return [
+        {"job_id": row[0], "incident_id": row[1], "event_id": row[2], "kind": row[3], "payload": _decode(row[4]), "diagnostics": _decode(row[5]), "failed_at": row[6].isoformat()}
+        for row in rows
+    ]
+
+
+def replay_dead_letter(job_id, run_context=None):
+    """Create a new analysis job from dead-letter payload without external side effects."""
+    ensure_schema()
+    now = _now()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT incident_id,event_id,payload FROM incident_dead_letters WHERE job_id=%s FOR UPDATE", (job_id,))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("dead-letter job not found")
+        key = _job_key(row[1], "reprocess", str(job_id))
+        cur.execute(
+            "INSERT INTO incident_jobs (job_key,incident_id,event_id,kind,status,available_at,payload,run_context,created_at,updated_at) "
+            "VALUES (%s,%s,%s,'reprocess','pending',%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE updated_at=VALUES(updated_at)",
+            (key, row[0], row[1], now, row[2], _json(complete_run_context(run_context)), now, now),
+        )
+        cur.execute("UPDATE incident_dead_letters SET replayed_at=%s WHERE job_id=%s", (now, job_id))
+        conn.commit()
+    return {"incident_id": row[0], "event_id": row[1], "replayed": True}
+
+
+def enqueue_reprocessing(incident_id, run_context=None):
+    """Queue the latest stored normalized event for a versioned analysis-only rerun."""
+    ensure_schema()
+    context = complete_run_context(run_context)
+    now = _now()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT event_id,payload FROM incident_events WHERE incident_id=%s "
+            "ORDER BY event_id DESC LIMIT 1",
+            (incident_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("incident has no stored event")
+        salt = json.dumps(context, sort_keys=True, separators=(",", ":"))
+        key = _job_key(row[0], "reprocess", salt)
+        cur.execute(
+            "INSERT INTO incident_jobs (job_key,incident_id,event_id,kind,status,available_at,payload,run_context,created_at,updated_at) "
+            "VALUES (%s,%s,%s,'reprocess','pending',%s,%s,%s,%s,%s) "
+            "ON DUPLICATE KEY UPDATE updated_at=VALUES(updated_at)",
+            (key, incident_id, row[0], now, row[1], _json(context), now, now),
+        )
+        job_id = cur.lastrowid
+        conn.commit()
+    return {"incident_id": incident_id, "event_id": row[0], "job_id": job_id, "run_context": context}
