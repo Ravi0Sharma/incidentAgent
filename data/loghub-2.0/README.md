@@ -5,6 +5,10 @@ This directory contains the complete local LogHub 2.0 dataset download as the
 and template CSV for one dataset. The archives are stored with Git LFS, so run
 `git lfs pull` after cloning if they were not downloaded automatically.
 
+`2k_dataset/` contains the runnable LogHub 2k benchmark subsets, including
+their raw 2k logs and 28 `*_corrected.csv` files. Those corrected files are the
+parser-evaluation ground truth (event/template labels), not incident labels.
+
 Extract them into the location expected by the evaluation scripts:
 
 ```sh
