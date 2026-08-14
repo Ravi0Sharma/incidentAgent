@@ -25,7 +25,7 @@ def main():
     parser.add_argument(
         "--dataset-root",
         type=Path,
-        default=REPO_ROOT.parent / "Loghub-2.0" / "extracted",
+        default=REPO_ROOT / "data" / "loghub-2.0" / "extracted",
     )
     parser.add_argument("--sample-limit", type=int, default=200)
     parser.add_argument(

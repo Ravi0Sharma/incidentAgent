@@ -83,7 +83,7 @@ def _pre_review_metrics(cases):
 
 def main():
     parser = argparse.ArgumentParser()
-    default_root = REPO_ROOT.parent / "Loghub-2.0" / "extracted"
+    default_root = REPO_ROOT / "data" / "loghub-2.0" / "extracted"
     parser.add_argument(
         "--dataset-root",
         type=Path,

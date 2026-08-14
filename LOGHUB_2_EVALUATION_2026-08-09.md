@@ -4,7 +4,7 @@
 
 LogHub 2.0 was downloaded from the official
 [Zenodo record](https://zenodo.org/records/8275861). All fourteen split ZIP
-archives are stored under `../Loghub-2.0/archives`; every archive passed both
+archives are stored under `data/loghub-2.0/archives`; every archive passed both
 its published MD5 checksum and `unzip` integrity validation.
 
 This corpus is used as label-last evaluation data. Its `EventId` and
@@ -15,7 +15,7 @@ inference.
 ## Local data state
 
 The five first-priority datasets are unpacked under
-`../Loghub-2.0/extracted/<dataset>/<dataset>`:
+`data/loghub-2.0/extracted/<dataset>/<dataset>`:
 
 | Dataset | Raw lines | Template labels | Initial purpose |
 | --- | ---: | ---: | --- |

@@ -1,0 +1,1 @@
+data/loghub-2.0/archives/*.zip filter=lfs diff=lfs merge=lfs -text
