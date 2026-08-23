@@ -82,6 +82,8 @@ def main():
     bin_dir = PYTHON.parent
     steps = [
         ("repository secret scan", [str(PYTHON), "scripts/check_repository_secrets.py"]),
+        ("Markdown links", [str(PYTHON), "scripts/check_markdown_links.py"]),
+        ("Compose topology", [str(PYTHON), "scripts/validate_compose_config.py"]),
         ("ruff", [str(bin_dir / "ruff"), "check", "."]),
         ("mypy", [str(bin_dir / "mypy"), *MYPY_TARGETS]),
         ("compile", [str(PYTHON), "-m", "compileall", "-q", ".", "-x", "(^|/)(.venv|data|output)/"]),

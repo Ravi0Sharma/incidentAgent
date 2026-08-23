@@ -15,6 +15,10 @@ output
 tests
 htmlcov
 .github
+data
+docs
+docker
+compose.yaml
 *.md
 mysql_sim.log
 *.pyc

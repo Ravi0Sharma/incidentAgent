@@ -1,0 +1,205 @@
+name: incident-agent
+
+x-app-image: &app-image
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: incident-agent:local
+
+x-runtime-environment: &runtime-environment
+  ENVIRONMENT: development
+  SERVICE_VERSION: compose-local
+  CHECKPOINTER: mysql
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: incident_agent
+  MYSQL_API_USER: incident_api
+  MYSQL_API_PASSWORD: local-api-only
+  MYSQL_WORKER_USER: incident_worker
+  MYSQL_WORKER_PASSWORD: local-worker-only
+  MYSQL_MIGRATOR_USER: incident_migrator
+  MYSQL_MIGRATOR_PASSWORD: local-migrator-only
+  MYSQL_POOL_SIZE: "8"
+  MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS: "5"
+  MYSQL_CONNECT_TIMEOUT_SECONDS: "5"
+  MYSQL_READ_TIMEOUT_SECONDS: "30"
+  MYSQL_WRITE_TIMEOUT_SECONDS: "30"
+  MYSQL_SSL_ENABLED: "false"
+  RUNTIME_SCHEMA_DDL_ENABLED: "false"
+  API_DRAIN_JOBS: "false"
+  MIN_ACTIVE_WORKERS: "2"
+  WORKER_POLL_INTERVAL_SECONDS: "0.25"
+  WORKER_HEARTBEAT_STALE_SECONDS: "15"
+  JOB_LEASE_SECONDS: "120"
+  JOB_HEARTBEAT_INTERVAL_SECONDS: "30"
+  CONNECTORS_ENABLED: "false"
+  MODEL_ENABLED: "false"
+  SKIP_LLM: "true"
+  PUBLISH_EXTERNAL: "false"
+  PII_REDACTION_ENABLED: "true"
+  REDACTION_SALT: local-compose-redaction
+  DEPLOYMENT_TENANT_ID: local-compose
+  DEFAULT_ALERT_ENVIRONMENT: development
+  SUPPORTED_INCIDENT_ENVIRONMENTS: development
+  WEBHOOK_SHARED_SECRET: local-compose-webhook-only
+  CANARY_SHARED_SECRET: local-compose-canary-only
+  REVIEW_AUTH_MODE: basic
+  REVIEW_USERNAME: incident-reviewer
+  REVIEW_PASSWORD: local-review-only
+  HTML_OUTPUT_DIR: /app/output
+  INCIDENT_STORE_PATH: /app/output/incident-agent.sqlite3
+
+x-app-runtime: &app-runtime
+  <<: *app-image
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  volumes:
+    - incident_output:/app/output
+  networks:
+    - incident_backend
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: incident_agent
+      MYSQL_ROOT_PASSWORD: local-root-only
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --transaction-isolation=READ-COMMITTED
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - incident_mysql:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping --host=127.0.0.1 --user=root --password=$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks:
+      - incident_backend
+
+  migrator:
+    <<: *app-runtime
+    restart: "no"
+    environment:
+      <<: *runtime-environment
+      PROCESS_ROLE: migrator
+    command: ["python", "scripts/migrate_database.py", "apply"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  worker-1:
+    <<: *app-runtime
+    environment:
+      <<: *runtime-environment
+      PROCESS_ROLE: worker
+      WORKER_METRICS_PORT: "9100"
+    command: ["python", "scripts/run_worker.py"]
+    ports:
+      - "127.0.0.1:9101:9100"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/metrics', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  worker-2:
+    <<: *app-runtime
+    environment:
+      <<: *runtime-environment
+      PROCESS_ROLE: worker
+      WORKER_METRICS_PORT: "9100"
+    command: ["python", "scripts/run_worker.py"]
+    ports:
+      - "127.0.0.1:9102:9100"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/metrics', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  api:
+    <<: *app-runtime
+    environment:
+      <<: *runtime-environment
+      PROCESS_ROLE: api
+      PORT: "8000"
+    command: ["python", "scripts/start_api.py"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      worker-1:
+        condition: service_healthy
+      worker-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  verify:
+    <<: *app-image
+    profiles: ["tools"]
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    environment:
+      ENVIRONMENT: local
+      WEBHOOK_SHARED_SECRET: local-compose-webhook-only
+      CANARY_SHARED_SECRET: local-compose-canary-only
+    command:
+      - python
+      - scripts/run_shadow_canary.py
+      - --base-url
+      - http://api:8000
+      - --service
+      - payments
+      - --environment
+      - development
+      - --tenant
+      - local-compose
+      - --expected-min-workers
+      - "2"
+      - --local
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - incident_backend
+
+volumes:
+  incident_mysql:
+  incident_output:
+
+networks:
+  incident_backend:
+    driver: bridge
+    internal: true

@@ -72,7 +72,7 @@ def main():
     parser.add_argument("--expected-min-workers", type=int, default=2)
     parser.add_argument("--local", action="store_true")
     args = parser.parse_args()
-    if not args.base_url.startswith("https://") and os.getenv("ENVIRONMENT") != "local":
+    if not args.base_url.startswith("https://") and not args.local:
         raise RuntimeError("shadow canary requires HTTPS")
     webhook_secret = os.environ["WEBHOOK_SHARED_SECRET"]
     canary_secret = os.environ["CANARY_SHARED_SECRET"]
