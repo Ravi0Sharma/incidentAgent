@@ -5,9 +5,9 @@
 > for production releases.
 
 The concrete verification methods and pass/fail rules for areas 1-15 are in
-[`TEST_STRATEGY.md`](TEST_STRATEGY.md).
+[`TEST_STRATEGY.md`](../development/TEST_STRATEGY.md).
 The deduplicated execution order and project-wide progress view are in
-[`PROJECT_MASTER_CHECKLIST.md`](PROJECT_MASTER_CHECKLIST.md). This file remains
+[`PROJECT_MASTER_CHECKLIST.md`](../development/PROJECT_MASTER_CHECKLIST.md). This file remains
 the authoritative acceptance list.
 
 ## How To Use This Document
@@ -44,7 +44,7 @@ failover, real provider contracts, per-destination publication recovery and
 long-duration SLO evidence remain open.
 
 **Planning update (2026-07-22):** the active finish line is now
-[`Local-Safe v0.1`](SAFE_COMPLETION_PLAN.md), not Shadow-Ready. It permits
+[`Local-Safe v0.1`](../development/SAFE_COMPLETION_PLAN.md), not Shadow-Ready. It permits
 fixture/replay-only local use with no production telemetry, hosted deployment,
 or external effects. The Shadow-Ready DoD below remains a future, unchanged
 safety gate. Railway work is out of the active scope.
@@ -72,7 +72,7 @@ Current local checks:
 - `.venv/bin/python scripts/check_prompt_budget.py`: passed. Interpretation was
   5 064 characters, RCA 4 047, postmortem 3 743, and the evidence pack 4 192.
 - The dated Local-Safe technical validation and closure record are in
-  [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](LOCAL_SAFE_CLOSURE_2026-08-09.md).
+  [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-09.md).
 - HDFS_v1: 575 061 traces counted and truth-joined only after label-free
   artifacts; 500 balanced sampling cases passed boundary/signal retention.
 - OpenStack: 207 820 primary events parsed; all continuation lines accounted
@@ -158,7 +158,7 @@ The most important production blockers are:
 
 ## 1. Product Scope And Safety Contract
 
-Supporting artifact: [`OPERATING_CONTRACT.md`](OPERATING_CONTRACT.md). It
+Supporting artifact: [`OPERATING_CONTRACT.md`](../contracts/OPERATING_CONTRACT.md). It
 documents completed supporting work below without claiming that the remaining
 runtime P0/P1 controls are complete.
 
@@ -200,7 +200,7 @@ runtime P0/P1 controls are complete.
 
 ## 2. Alert Intake And Incident Lifecycle
 
-Supporting artifact: [`ALERT_INPUT_CONTRACT.md`](ALERT_INPUT_CONTRACT.md).
+Supporting artifact: [`ALERT_INPUT_CONTRACT.md`](../contracts/ALERT_INPUT_CONTRACT.md).
 
 - [x] `ING-001` Grafana/Alertmanager payloads can be normalized into the
   internal alert shape.
@@ -295,7 +295,7 @@ Supporting artifact: [`ALERT_INPUT_CONTRACT.md`](ALERT_INPUT_CONTRACT.md).
 - [x] `ING-017` `P1` Version the HTTP API and publish an OpenAPI contract with
   authentication, idempotency, state, and error semantics.
 - [x] `ING-017a` The current alert payload contract has an explicit version and
-  documented responses in [`ALERT_INPUT_CONTRACT.md`](ALERT_INPUT_CONTRACT.md).
+  documented responses in [`ALERT_INPUT_CONTRACT.md`](../contracts/ALERT_INPUT_CONTRACT.md).
 - [ ] `ING-018` `P1` Rate-limit by trusted caller and globally. Load tests prove
   one noisy source cannot starve other sources or the review UI.
 - [x] `ING-018a` A bounded local global/per-caller intake rate limiter returns
@@ -307,7 +307,7 @@ Supporting artifact: [`ALERT_INPUT_CONTRACT.md`](ALERT_INPUT_CONTRACT.md).
 
 ## 3. Telemetry And Change-Source Connectors
 
-Supporting artifact: [`CONNECTOR_CONTRACT.md`](CONNECTOR_CONTRACT.md).
+Supporting artifact: [`CONNECTOR_CONTRACT.md`](../contracts/CONNECTOR_CONTRACT.md).
 
 - [x] `SRC-001` Loki supports bounded log queries, an exact-count attempt, and
   targeted log search.
@@ -374,7 +374,7 @@ Supporting artifact: [`CONNECTOR_CONTRACT.md`](CONNECTOR_CONTRACT.md).
 
 ## 4. Evidence Reduction, Provenance, And Timeline
 
-Supporting artifact: [`EVIDENCE_CONTRACT.md`](EVIDENCE_CONTRACT.md).
+Supporting artifact: [`EVIDENCE_CONTRACT.md`](../contracts/EVIDENCE_CONTRACT.md).
 
 - [x] `EVD-001` Incident collection is anchored to alert timestamps and bounded
   by a maximum investigation window.
@@ -473,7 +473,7 @@ Supporting artifact: [`EVIDENCE_CONTRACT.md`](EVIDENCE_CONTRACT.md).
 
 ## 5. Deterministic Detection, Correlation, And Hypotheses
 
-Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](HYPOTHESIS_CONTRACT.md).
+Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT.md).
 
 - [x] `COR-001` Version-controllable Markdown rules detect several known failure
   patterns before model reasoning.

@@ -36,6 +36,6 @@ in either architecture.
 ## Decisions awaiting ADRs
 
 The current MySQL storage/queue decision is documented in
-[`docs/adr/0001-mysql-incident-store-and-queue.md`](docs/adr/0001-mysql-incident-store-and-queue.md).
+[`0001-mysql-incident-store-and-queue.md`](../adr/0001-mysql-incident-store-and-queue.md).
 Before production, create ADRs for identity/RBAC, model providers/data handling,
 knowledge retrieval, object storage/retention and publication.

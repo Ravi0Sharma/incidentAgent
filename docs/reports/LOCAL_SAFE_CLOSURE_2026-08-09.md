@@ -8,7 +8,7 @@ Production claim: none
 
 - Decision: **Local-Safe complete**
 - Restart point: `M01` in
-  [`PROJECT_MASTER_CHECKLIST.md`](PROJECT_MASTER_CHECKLIST.md).
+  [`PROJECT_MASTER_CHECKLIST.md`](../development/PROJECT_MASTER_CHECKLIST.md).
 
 A named owner is not required for this local solo-POC. Named operational and
 release owners remain required before Shadow, pilot, or production promotion.
@@ -68,7 +68,7 @@ product failure or as release evidence.
 ## Known limitations and deferred tracks
 
 The complete, ordered backlog is
-[`PROJECT_MASTER_CHECKLIST.md`](PROJECT_MASTER_CHECKLIST.md). In particular:
+[`PROJECT_MASTER_CHECKLIST.md`](../development/PROJECT_MASTER_CHECKLIST.md). In particular:
 
 - connector observations do not yet prove the complete canonical multi-round
   revision path (`M01`);

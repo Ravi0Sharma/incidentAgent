@@ -4,7 +4,7 @@
 > make a decision that changes the purpose, architecture, priority, or scope.
 
 The detailed production Definition of Done and current readiness audit live in
-[`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md). The matching verification
+[`PRODUCTION_READINESS.md`](../operations/PRODUCTION_READINESS.md). The matching verification
 plan for areas 1-15 lives in [`TEST_STRATEGY.md`](TEST_STRATEGY.md).
 The deduplicated execution order and project-wide progress view live in
 [`PROJECT_MASTER_CHECKLIST.md`](PROJECT_MASTER_CHECKLIST.md); use it as the
@@ -13,49 +13,49 @@ All deliberately postponed work and its exact resume conditions are collected
 in [`DEFERRED_WORK_CHECKLIST.md`](DEFERRED_WORK_CHECKLIST.md); it is a parking
 register, not a competing work queue.
 The prioritized hardening sequence and Railway migration gates live in
-[`PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md`](PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md).
+[`PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md`](../operations/PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md).
 The dated blind OpenAI portfolio, full pre-review E2E evidence, token usage and
 Railway cost-control finding live in
-[`OPENAI_LIVE_EVALUATION_2026-08-09.md`](OPENAI_LIVE_EVALUATION_2026-08-09.md).
+[`OPENAI_LIVE_EVALUATION_2026-08-09.md`](../reports/OPENAI_LIVE_EVALUATION_2026-08-09.md).
 The current verified local runtime result and production-shadow go/no-go are in
-[`SHADOW_READINESS_AUDIT_2026-08-14.md`](SHADOW_READINESS_AUDIT_2026-08-14.md).
+[`SHADOW_READINESS_AUDIT_2026-08-14.md`](../reports/SHADOW_READINESS_AUDIT_2026-08-14.md).
 The local canonical-evidence completion and required real-log revalidation for
 the Arcvial shadow scope are in
-[`ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md`](ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md).
+[`ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md`](../reports/ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md).
 The independent API/worker boundary, leases, heartbeats, backpressure and
 direct crash-recovery evidence are in
-[`ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`](ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md).
+[`ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`](../reports/ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md).
 The verified LogHub 2.0 intake, full raw-format audit, and parser findings live
-in [`LOGHUB_2_EVALUATION_2026-08-09.md`](LOGHUB_2_EVALUATION_2026-08-09.md).
+in [`LOGHUB_2_EVALUATION_2026-08-09.md`](../reports/LOGHUB_2_EVALUATION_2026-08-09.md).
 The bounded local-POC closure plan, explicit production deferrals, and
 Railway-excluded scope are in [`SAFE_COMPLETION_PLAN.md`](SAFE_COMPLETION_PLAN.md).
 The current support boundary and safety/change policy live in
-[`OPERATING_CONTRACT.md`](OPERATING_CONTRACT.md).
+[`OPERATING_CONTRACT.md`](../contracts/OPERATING_CONTRACT.md).
 The versioned webhook alert contract and current limits live in
-[`ALERT_INPUT_CONTRACT.md`](ALERT_INPUT_CONTRACT.md).
+[`ALERT_INPUT_CONTRACT.md`](../contracts/ALERT_INPUT_CONTRACT.md).
 The connector boundary and per-source request-policy contract live in
-[`CONNECTOR_CONTRACT.md`](CONNECTOR_CONTRACT.md).
+[`CONNECTOR_CONTRACT.md`](../contracts/CONNECTOR_CONTRACT.md).
 The evidence boundary, current schema, and redaction scope live in
-[`EVIDENCE_CONTRACT.md`](EVIDENCE_CONTRACT.md).
+[`EVIDENCE_CONTRACT.md`](../contracts/EVIDENCE_CONTRACT.md).
 The deterministic hypothesis candidate boundary lives in
-[`HYPOTHESIS_CONTRACT.md`](HYPOTHESIS_CONTRACT.md).
+[`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT.md).
 The current memory/review boundary lives in
-[`MEMORY_AND_REVIEW_CONTRACT.md`](MEMORY_AND_REVIEW_CONTRACT.md).
+[`MEMORY_AND_REVIEW_CONTRACT.md`](../contracts/MEMORY_AND_REVIEW_CONTRACT.md).
 The implemented curated-memory boundary lives in
-[`KNOWLEDGE_MEMORY.md`](KNOWLEDGE_MEMORY.md), and canonical durable-record
-invariants in [`CANONICAL_SCHEMAS.md`](CANONICAL_SCHEMAS.md).
+[`KNOWLEDGE_MEMORY.md`](../architecture/KNOWLEDGE_MEMORY.md), and canonical durable-record
+invariants in [`CANONICAL_SCHEMAS.md`](../architecture/CANONICAL_SCHEMAS.md).
 The current security and operations baseline lives in
-[`SECURITY_AND_OPERATIONS.md`](SECURITY_AND_OPERATIONS.md).
+[`SECURITY_AND_OPERATIONS.md`](../operations/SECURITY_AND_OPERATIONS.md).
 The current and target architecture live in
-[`ARCHITECTURE.md`](ARCHITECTURE.md), and release governance in
+[`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md), and release governance in
 [`GOVERNANCE_AND_QUALITY.md`](GOVERNANCE_AND_QUALITY.md).
-The complete visual system flow is [`SYSTEM_FLOW.svg`](SYSTEM_FLOW.svg).
+The complete visual system flow is [`SYSTEM_FLOW.svg`](../architecture/SYSTEM_FLOW.svg).
 Local setup and safe operating procedures live in
-[`SETUP_GUIDE.md`](SETUP_GUIDE.md) and
-[`OPERATOR_RUNBOOKS.md`](OPERATOR_RUNBOOKS.md).
+[`SETUP_GUIDE.md`](../operations/SETUP_GUIDE.md) and
+[`OPERATOR_RUNBOOKS.md`](../operations/OPERATOR_RUNBOOKS.md).
 Dataset selection must follow the actual workload environment rather than
 public-corpus availability; the current decision gate and priority order are in
-[`TARGET_ENVIRONMENT_AND_DATA_PRIORITY.md`](TARGET_ENVIRONMENT_AND_DATA_PRIORITY.md).
+[`TARGET_ENVIRONMENT_AND_DATA_PRIORITY.md`](../architecture/TARGET_ENVIRONMENT_AND_DATA_PRIORITY.md).
 
 ## Agreed POC Decisions
 

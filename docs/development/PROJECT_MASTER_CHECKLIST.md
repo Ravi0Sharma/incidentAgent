@@ -2,7 +2,7 @@
 
 Senast inventerad: 2026-08-09  
 Aktivt mål: **Local-Safe v0.1**  
-Auktoritativ kravlista: [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md)
+Auktoritativ kravlista: [`PRODUCTION_READINESS.md`](../operations/PRODUCTION_READINESS.md)
 
 Medvetet uppskjutna punkter och deras återupptagningsvillkor finns samlade i
 [`DEFERRED_WORK_CHECKLIST.md`](DEFERRED_WORK_CHECKLIST.md). Den filen är ett
@@ -88,7 +88,7 @@ Detta är befintlig grund, inte påståenden om production readiness.
       i en closure-fil. Exit: alla fem punkter i `SAFE_COMPLETION_PLAN.md` har
       daterat bevis och beslutet säger uttryckligen “inte Shadow/production”.
       Tekniskt bevis och stängningsbeslut finns i
-      [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](LOCAL_SAFE_CLOSURE_2026-08-09.md).
+      [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-09.md).
       Namngiven release owner krävs först för Shadow/produktion.
 
 ## Fas 1 – förbättra pipelinen fram till och med review

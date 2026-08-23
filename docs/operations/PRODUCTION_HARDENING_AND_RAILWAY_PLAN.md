@@ -16,7 +16,7 @@ without publishing or changing production systems.
 
 ## Current Scope Boundary
 
-The active, bounded plan is [`SAFE_COMPLETION_PLAN.md`](SAFE_COMPLETION_PLAN.md).
+The active, bounded plan is [`SAFE_COMPLETION_PLAN.md`](../development/SAFE_COMPLETION_PLAN.md).
 It covers every non-Railway hardening concern in this document while declaring
 the difficult production work as an explicit deferred track. It does **not**
 weaken the requirements in this document or the production readiness checklist.
