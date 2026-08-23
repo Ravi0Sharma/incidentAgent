@@ -18,6 +18,20 @@ DDL grants. Do not run a destructive database downgrade during an incident:
 roll back application code first, then use a tested backup/restore procedure
 if a schema reversal is unavoidable.
 
+## Backup and restore rehearsal
+
+Rehearse recovery against a new, isolated MySQL database before every material
+release. Take a consistent logical backup from the designated incident
+database, restore it under a new database name, then run the migrator in
+`check` mode against the restored database. Verify that a checkpoint and an
+incident/job record can be read before considering the rehearsal successful.
+
+Never test restore by overwriting the live database. Keep the backup encrypted
+and access-controlled, record its source timestamp and MySQL version, and
+delete the isolated restore database after the rehearsal. A code rollback is
+the first response to a bad migration; use the tested restore procedure only
+when data recovery is required.
+
 ## Queue backlog or stuck job
 
 Inspect `incident_jobs` by status and lease expiry. Do not delete events.
@@ -36,6 +50,11 @@ restart. If the process crashes, wait for `leased_until` to expire; another
 worker then reclaims the same job with a higher `attempt_count`. Alert if
 `pending` plus `leased` approaches `MAX_PENDING_JOBS`; API queue-capacity 503s
 include `Retry-After` and callers should retry the original signed request.
+
+For a release rehearsal, deliberately kill one worker while it holds a short
+lease, wait for expiry, and confirm exactly one replacement worker reclaims
+and completes that job. Preserve the job id and attempt count as evidence; do
+not use a production incident as the test case.
 
 ## Model or source outage
 

@@ -19,6 +19,8 @@ returning `accepted`.
 ## Consequences
 
 This gives one durable source of truth and enables local integration tests.
-The current worker is launched by the web process, so independent worker
-deployment, backup/PITR, migrations and disaster recovery remain production
-work. SQLite and mysql-sim are not supported runtime modes.
+API and worker can run as independent processes; their LangGraph checkpoints
+are read and written directly through MySQL rather than relying on process
+memory. Backup/PITR, migration releases and disaster recovery still require
+environment-specific operational controls and rehearsals. SQLite and
+mysql-sim are not supported runtime modes.
