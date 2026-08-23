@@ -224,7 +224,6 @@ def ensure_schema():
 
 def worker_runtime_status(max_age_seconds=15):
     """Return independently observed worker liveness from durable heartbeats."""
-    ensure_schema()
     cutoff = _now() - timedelta(seconds=float(max_age_seconds))
     with _connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -263,13 +262,28 @@ def record_worker_heartbeat(worker_id, status="running", current_job_id=None):
 
 
 def readiness_check(require_worker=False, worker_max_age_seconds=15):
-    """Verify that the configured durable store is reachable and schema-ready."""
+    """Verify dependencies without creating or changing database state."""
     try:
-        ensure_schema()
         with _connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT 1")
             cur.fetchone()
-            conn.commit()
+            cur.execute(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema=%s AND table_name='incident_jobs' LIMIT 1",
+                (MYSQL_DATABASE,),
+            )
+            schema_ready = bool(cur.fetchone())
+        if not schema_ready:
+            return {
+                "database": "ready",
+                "queue": "unavailable",
+                "schema": "missing",
+                "worker": {
+                    "status": "not_checked",
+                    "active_workers": 0,
+                    "last_seen": None,
+                },
+            }
         worker = (
             worker_runtime_status(worker_max_age_seconds)
             if require_worker

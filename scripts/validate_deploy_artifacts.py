@@ -28,6 +28,11 @@ def main():
         'CMD ["python", "scripts/start_api.py"]' in dockerfile,
         "API command is not exec-form",
     )
+    api_entrypoint = (ROOT / "scripts" / "start_api.py").read_text(encoding="utf-8")
+    _require(
+        "validate_runtime_config(settings)" in api_entrypoint,
+        "API startup does not fail closed on unsafe runtime configuration",
+    )
 
     api_railway = (ROOT / "railway.toml").read_text(encoding="utf-8")
     worker_railway = (ROOT / "railway.worker.toml").read_text(encoding="utf-8")

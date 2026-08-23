@@ -92,9 +92,9 @@ safety policy only from hostnames or the presence of an API key.
       `local`, even if a conflicting environment variable is supplied.
 - [x] `PUBLISH_EXTERNAL=false` remains enforced for shadow releases.
 
-Current evidence (2026-07-28): `utils/runtime_config.py` validates both secure
-runtime modes before FastAPI starts, `webhook/api.py` requires webhook and
-review authentication in both modes, and
+Current evidence (2026-08-23): both `scripts/start_api.py` and
+`scripts/run_worker.py` validate secure runtime modes before accepting work,
+`webhook/api.py` requires webhook and review authentication in both modes, and
 `tests/test_operational_baselines.py`/`tests/test_scope_safety.py` cover mock,
 publishing, tracing and authentication failures. Explicit shadow labelling in
 every rendered result remains open, so the section is not complete.
@@ -392,8 +392,8 @@ Before the first hosted deployment:
 - [ ] Build and tests run in CI from a pinned lockfile/runtime version.
 - [ ] Database migrations have a tested forward and rollback procedure.
 - [ ] API and worker have separate commands and structured logs.
-- [ ] Startup configuration fails closed for the selected environment.
-- [ ] `/healthz` and `/readyz` are fast and do not modify the database.
+- [x] Startup configuration fails closed for the selected environment.
+- [x] `/healthz` and `/readyz` are fast and do not modify the database.
 - [ ] No raw model input/output tracing is enabled.
 
 Before connecting real production observability data:

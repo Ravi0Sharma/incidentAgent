@@ -1744,6 +1744,7 @@ async def readyz():
     )
     if (
         dependencies["database"] != "ready"
+        or dependencies["queue"] != "ready"
         or dependencies["worker"]["status"] == "unavailable"
     ):
         return JSONResponse(status_code=503, content={"status": "not_ready", "dependencies": dependencies})
