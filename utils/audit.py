@@ -7,9 +7,8 @@ baseline, not a claim of immutable/WORM storage or an authorization system.
 from datetime import datetime, timezone
 import json
 
-import pymysql
-
-from settings import MYSQL_DATABASE, MYSQL_HOST, MYSQL_PASSWORD, MYSQL_PORT, MYSQL_USER
+from utils.mysql import connection as mysql_connection
+from settings import RUNTIME_SCHEMA_DDL_ENABLED
 from utils.redaction import redact_data
 
 
@@ -17,18 +16,12 @@ AUDIT_SCHEMA_VERSION = "incident-audit-event/v1"
 
 
 def _connection():
-    return pymysql.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        charset="utf8mb4",
-        autocommit=False,
-    )
+    return mysql_connection()
 
 
 def _ensure_schema(cursor):
+    if not RUNTIME_SCHEMA_DDL_ENABLED:
+        return
     cursor.execute(
         "CREATE TABLE IF NOT EXISTS audit_events ("
         "event_id BIGINT AUTO_INCREMENT PRIMARY KEY, "

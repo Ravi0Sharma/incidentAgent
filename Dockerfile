@@ -1,18 +1,32 @@
-FROM python:3.11-slim
+FROM python:3.11.15-slim-bookworm AS builder
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /build
+COPY requirements.lock ./
+RUN python -m pip install --upgrade pip==26.1.2 setuptools==84.0.0 && \
+    python -m pip install --require-hashes --prefix=/install -r requirements.lock
+
+FROM python:3.11.15-slim-bookworm AS runtime
+
+ARG BUILD_REVISION=unknown
+LABEL org.opencontainers.image.title="incident-agent" \
+      org.opencontainers.image.revision="${BUILD_REVISION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PATH=/home/incident/.local/bin:${PATH}
 
+RUN groupadd --gid 10001 incident && \
+    useradd --uid 10001 --gid incident --create-home --shell /usr/sbin/nologin incident
+
+COPY --from=builder /install /usr/local
 WORKDIR /app
+COPY --chown=incident:incident . ./
+RUN mkdir -p /app/output && chown incident:incident /app/output
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . ./
-RUN mkdir -p /app/output
-
-# Railway provides PORT at runtime. The development deployment stays in
-# ENVIRONMENT=development and requires explicit review credentials.
-CMD ["sh", "-c", "uvicorn webhook.api:app --host 0.0.0.0 --port ${PORT:-8000}"]
+USER 10001:10001
+EXPOSE 8000
+CMD ["python", "scripts/start_api.py"]

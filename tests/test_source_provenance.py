@@ -62,9 +62,9 @@ class _MixedQualityLoki:
     ):
         valid = {
             "timestamp":
-            "2026-07-28T10:00:00Z",
+            "2026-07-28T12:00:00+02:00",
             "message":
-            "connection refused",
+            "connection refused token=raw-connector-secret",
             "labels": {
                 "level": "warning",
             },
@@ -101,7 +101,7 @@ class _MetricSource:
             "secret raw promql",
             "value": 0.2,
             "timestamp":
-            "2026-07-28T10:04:00Z",
+            "2026-07-28T12:04:00+02:00",
         }
         return [
             metric,
@@ -118,7 +118,7 @@ class _DeploySource:
         return [
             {
                 "time":
-                "2026-07-28T10:03:00Z",
+                "2026-07-28T12:03:00+02:00",
                 "commit": "abcdef1",
                 "environment":
                 "payments",
@@ -275,6 +275,18 @@ class SourceProvenanceTests(
         self.assertEqual(
             quality["usable_records"],
             1,
+        )
+        self.assertNotIn(
+            "raw-connector-secret",
+            json.dumps(collected, sort_keys=True),
+        )
+        self.assertEqual(
+            collected["logs"][0]["event_time"],
+            "2026-07-28T10:00:00Z",
+        )
+        self.assertEqual(
+            collected["logs"][0]["original_timezone"],
+            "UTC+02:00",
         )
         query_json = json.dumps(
             source_provenance[
@@ -435,6 +447,22 @@ class SourceProvenanceTests(
                 "qry-prometheus-"
             )
         )
+        self.assertEqual(
+            metric["timestamp"],
+            "2026-07-28T10:04:00Z",
+        )
+        self.assertEqual(
+            metric["original_timestamp"],
+            "2026-07-28T12:04:00+02:00",
+        )
+        self.assertEqual(
+            metric["classification"],
+            "confidential",
+        )
+        self.assertEqual(
+            metric["event_id"],
+            metric["evidence_id"],
+        )
         quality = result[
             "source_status"
         ]["prometheus"][
@@ -478,6 +506,14 @@ class SourceProvenanceTests(
             ].startswith(
                 "qry-deployments-"
             )
+        )
+        self.assertEqual(
+            result["deploys"][0]["time"],
+            "2026-07-28T10:03:00Z",
+        )
+        self.assertEqual(
+            result["deploys"][0]["original_timestamp"],
+            "2026-07-28T12:03:00+02:00",
         )
 
 

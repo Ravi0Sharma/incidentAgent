@@ -310,6 +310,7 @@ def aggregate_by_labels(state):
             "bucket_counts": defaultdict(int),
             "bucket_examples": {},
             "source_query_ids": set(),
+            "sources": set(),
             "source_schema_ids": set(),
             "connector_versions": set(),
             "clock_qualities": set(),
@@ -359,6 +360,10 @@ def aggregate_by_labels(state):
         lineage = log.get(
             "lineage", {}
         ) or {}
+        if lineage.get("source"):
+            g["sources"].add(
+                str(lineage["source"])
+            )
         if lineage.get("query_id"):
             g[
                 "source_query_ids"
@@ -447,6 +452,15 @@ def aggregate_by_labels(state):
         ):
             g["first_seen"] = ts
             g["_first_seen_dt"] = ts_dt
+            g["first_original_timestamp"] = log.get(
+                "original_timestamp"
+            )
+            g["first_original_timezone"] = log.get(
+                "original_timezone"
+            )
+            g["first_received_at"] = log.get(
+                "received_at"
+            )
             g["first_sample"] = {
                 "timestamp": ts,
                 "message": message,
@@ -552,6 +566,10 @@ def aggregate_by_labels(state):
                 g["dimension_values"]
             ),
             "lineage": {
+                "sources":
+                sorted(
+                    g["sources"]
+                ),
                 "source_query_ids":
                 sorted(
                     g[
@@ -610,6 +628,17 @@ def aggregate_by_labels(state):
                     }
                 ),
             },
+            "original_timestamp":
+            g.get("first_original_timestamp"),
+            "original_timezone":
+            g.get("first_original_timezone"),
+            "received_at":
+            g.get("first_received_at"),
+            "clock_quality": (
+                next(iter(g["clock_qualities"]))
+                if len(g["clock_qualities"]) == 1
+                else "mixed"
+            ),
             "representative_samples": [
                 sample
                 for sample in (

@@ -22,6 +22,7 @@ def sync_registry(
     analysis_revision=None,
     latest_event_id=None,
     expected_pending_version=None,
+    run_context=None,
 ):
     revision_diff = None
     if analysis_revision is not None:
@@ -33,6 +34,7 @@ def sync_registry(
             analysis_revision,
             state,
             event_id=latest_event_id,
+            run_context=run_context,
         )
         revision_diff = get_analysis_revision_diff(
             thread_id,

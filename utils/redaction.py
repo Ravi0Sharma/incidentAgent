@@ -62,6 +62,21 @@ _SENSITIVE_KEY_FRAGMENTS = (
 
 
 def _pseudonym(value):
+    if isinstance(value, str) and (
+        value.startswith("redacted-")
+        or value in {
+            "[REDACTED]",
+            "[OPENAI_KEY_REDACTED]",
+            "[GITHUB_TOKEN_REDACTED]",
+            "[SLACK_TOKEN_REDACTED]",
+            "[EMAIL_REDACTED]",
+            "[CARD_REDACTED]",
+            "[USER_REDACTED]",
+            "[HOST_REDACTED]",
+            "[IP_REDACTED]",
+        }
+    ):
+        return value
     digest = hashlib.sha256(
         f"{REDACTION_SALT}:{value}".encode("utf-8")
     ).hexdigest()[:12]

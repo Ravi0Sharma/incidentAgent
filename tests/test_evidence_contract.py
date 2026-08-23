@@ -6,9 +6,24 @@ from utils.log_normalizer import (
     normalize_log,
 )
 from webhook.grafana import normalize_grafana_alert
+from utils.redaction import redact_data
 
 
 class EvidenceContractTests(unittest.TestCase):
+    def test_recursive_redaction_is_idempotent_across_multiple_sinks(self):
+        value = {
+            "api_key": "raw-api-key",
+            "nested": {
+                "customer_id": "customer-123",
+                "message": "token=raw-token",
+            },
+        }
+        once = redact_data(value)
+        twice = redact_data(once)
+
+        self.assertEqual(once, twice)
+        self.assertNotIn("raw-", json.dumps(twice, sort_keys=True))
+
     def test_alert_annotations_and_url_are_recursively_redacted(self):
         alert = {
             "labels": {

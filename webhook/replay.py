@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 import pymysql
 
-from settings import MYSQL_DATABASE, MYSQL_HOST, MYSQL_PASSWORD, MYSQL_PORT, MYSQL_USER
+from utils.mysql import connection as mysql_connection
+from settings import RUNTIME_SCHEMA_DDL_ENABLED
 
 
 class ReplayError(ValueError):
@@ -15,15 +16,7 @@ class ReplayError(ValueError):
 
 
 def _connection():
-    return pymysql.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        charset="utf8mb4",
-        autocommit=False,
-    )
+    return mysql_connection()
 
 
 def _parse_timestamp(value):
@@ -38,6 +31,8 @@ def _nonce_hash(nonce):
 
 
 def _ensure_schema(conn):
+    if not RUNTIME_SCHEMA_DDL_ENABLED:
+        return
     with conn.cursor() as cur:
         cur.execute(
             "CREATE TABLE IF NOT EXISTS webhook_nonces ("

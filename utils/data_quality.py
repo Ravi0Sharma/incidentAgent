@@ -112,13 +112,25 @@ def assess_records(
     window=None,
     quarantine_invalid_timestamp=False,
     error_field="error",
+    received_at=None,
 ):
-    """Return unique usable records plus bounded quality counters."""
+    """Return redacted canonical-time records plus bounded quality counters.
+
+    Connector responses are untrusted.  Redaction happens before a usable row
+    is returned to graph state so the checkpointer never receives the raw
+    connector value.  Source time is retained separately from normalized UTC
+    event time.
+    """
     usable = []
     seen = set()
     counters = Counter()
     clock_quality = Counter()
     event_times = []
+    collected_at = received_at or datetime.now(timezone.utc)
+    if isinstance(collected_at, str):
+        collected_at = _parse(collected_at)
+    if collected_at is None:
+        collected_at = datetime.now(timezone.utc)
     for value in records or []:
         counters[
             "input_records"
@@ -133,7 +145,7 @@ def assess_records(
                 "quarantined_records"
             ] += 1
             continue
-        record = dict(value)
+        record = redact_data(dict(value))
         if (
             error_field
             and record.get(
@@ -157,12 +169,22 @@ def assess_records(
                 "quarantined_records"
             ] += 1
             continue
-        raw_timestamp = _timestamp(
-            record,
-            timestamp_fields,
+        timestamp_source_field = next(
+            (
+                field
+                for field in timestamp_fields
+                if record.get(field) not in (None, "")
+            ),
+            None,
+        )
+        raw_timestamp = (
+            record.get(timestamp_source_field)
+            if timestamp_source_field
+            else None
         )
         quality = normalize_timestamp(
-            raw_timestamp
+            raw_timestamp,
+            received_at=collected_at,
         )
         clock_quality[
             quality["clock_quality"]
@@ -201,6 +223,14 @@ def assess_records(
                 "quarantined_records"
             ] += 1
             continue
+        record.update({
+            "event_time": quality["event_time"],
+            "original_timestamp": quality["original_timestamp"],
+            "original_timezone": quality["original_timezone"],
+            "clock_quality": quality["clock_quality"],
+            "timestamp_source_field": timestamp_source_field,
+            "received_at": collected_at.isoformat().replace("+00:00", "Z"),
+        })
         identity = _identity(
             record
         )

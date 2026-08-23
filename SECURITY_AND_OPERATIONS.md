@@ -18,7 +18,8 @@ an OpenAI provider is enabled.
 ## Current runtime guardrails
 
 `/healthz` is liveness only. `/readyz` validates the supported production
-baseline and verifies MySQL plus the local queue schema: webhook/reviewer
+baseline and verifies MySQL plus the queue schema and, when API drain is off,
+a fresh durable heartbeat from an independent worker: webhook/reviewer
 OIDC configuration, separate session/CSRF secrets, non-default redaction salt,
 explicit CORS origins, HTTPS model
 endpoint, a non-local checkpointer, and no external publishing. Unsafe
@@ -47,12 +48,14 @@ multi-worker dashboards and alerts.
 The OIDC/RBAC/CSRF boundary is implemented locally but still requires a real
 identity-provider registration and staging security test. Hash-locked Python
 dependencies, repository secret scanning, dependency audit and CycloneDX SBOM
-generation now run in the local/CI quality definition. The following are not
-implemented: at-rest key management, network egress allowlisting, approved
-secret manager and rotation, container image scanning, durable queue/lease/outbox,
-Postgres migrations, backups/restore drill, dashboards, alert routing and
-canary delivery. They remain explicit blockers in `SEC-*`, `REL-*`, `OBS-*`
-and `DEP-*` checklist items.
+generation now run in the local/CI quality definition. The durable MySQL queue,
+renewable job/incident leases, worker heartbeat, bounded admission and
+dead-letter path are implemented locally. The following are not implemented:
+versioned least-privilege migrations, connection pooling, at-rest key
+management, network egress allowlisting, approved secret manager and rotation,
+container image scanning, durable publication outbox, backups/restore drill,
+dashboards, alert routing and canary delivery. They remain explicit blockers
+in `SEC-*`, `REL-*`, `OBS-*` and `DEP-*` checklist items.
 
 Threat-model coverage and proof are defined by `A09-T01`–`A09-T12`, recovery by
 `A10-T01`–`A10-T12`, and observability by `A11-T01`–`A11-T10`.

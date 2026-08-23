@@ -97,7 +97,7 @@ def canonical_evidence(
     received_at=None,
     service=None,
     environment=None,
-    classification="operational",
+    classification="confidential",
     lineage=None,
     collection_revision=1,
     supersedes=None,

@@ -76,6 +76,19 @@ ENVIRONMENT = os.getenv(
     "local"
 ).lower()
 
+DEPLOYMENT_TENANT_ID = os.getenv("DEPLOYMENT_TENANT_ID", "local")
+SECRETS_PROVIDER = os.getenv("SECRETS_PROVIDER", "environment").lower()
+EGRESS_ALLOWED_HOSTS = {
+    value.strip().lower()
+    for value in os.getenv("EGRESS_ALLOWED_HOSTS", "").split(",")
+    if value.strip()
+}
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")
+INTAKE_ENABLED = os.getenv("INTAKE_ENABLED", "true").lower() == "true"
+WORKER_ENABLED = os.getenv("WORKER_ENABLED", "true").lower() == "true"
+CONNECTORS_ENABLED = os.getenv("CONNECTORS_ENABLED", "true").lower() == "true"
+MODEL_ENABLED = os.getenv("MODEL_ENABLED", "true").lower() == "true"
+
 # Temporary local-model compatibility: a small local LLM may ground its
 # answer correctly but miss the exact Markdown headings required by review.
 # This is forcibly disabled outside the local environment.
@@ -136,10 +149,8 @@ USE_TOOL_CALLING = (
 )
 
 SKIP_LLM = (
-    os.getenv(
-        "SKIP_LLM",
-        "false"
-    ).lower() == "true"
+    not MODEL_ENABLED
+    or os.getenv("SKIP_LLM", "false").lower() == "true"
 )
 
 MAX_TOOL_CALLS = int(
@@ -432,6 +443,29 @@ MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "incident_agent")
 MYSQL_USER = os.getenv("MYSQL_USER", "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+PROCESS_ROLE = os.getenv("PROCESS_ROLE", "combined").lower()
+MYSQL_API_USER = os.getenv("MYSQL_API_USER", "")
+MYSQL_API_PASSWORD = os.getenv("MYSQL_API_PASSWORD", "")
+MYSQL_WORKER_USER = os.getenv("MYSQL_WORKER_USER", "")
+MYSQL_WORKER_PASSWORD = os.getenv("MYSQL_WORKER_PASSWORD", "")
+MYSQL_POOL_SIZE = int(os.getenv("MYSQL_POOL_SIZE", "8"))
+MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS = float(
+    os.getenv("MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS", "5")
+)
+MYSQL_CONNECT_TIMEOUT_SECONDS = int(os.getenv("MYSQL_CONNECT_TIMEOUT_SECONDS", "5"))
+MYSQL_READ_TIMEOUT_SECONDS = int(os.getenv("MYSQL_READ_TIMEOUT_SECONDS", "30"))
+MYSQL_WRITE_TIMEOUT_SECONDS = int(os.getenv("MYSQL_WRITE_TIMEOUT_SECONDS", "30"))
+MYSQL_SSL_ENABLED = os.getenv("MYSQL_SSL_ENABLED", "false").lower() == "true"
+MYSQL_SSL_CA = os.getenv("MYSQL_SSL_CA", "")
+MYSQL_SSL_VERIFY_IDENTITY = (
+    os.getenv("MYSQL_SSL_VERIFY_IDENTITY", "true").lower() == "true"
+)
+RUNTIME_SCHEMA_DDL_ENABLED = (
+    os.getenv(
+        "RUNTIME_SCHEMA_DDL_ENABLED",
+        "true" if ENVIRONMENT in {"local", "development"} else "false",
+    ).lower() == "true"
+)
 
 
 PII_REDACTION_ENABLED = (
@@ -482,6 +516,7 @@ OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "")
 OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")
 OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "")
 OIDC_ROLE_CLAIM = os.getenv("OIDC_ROLE_CLAIM", "roles")
+OIDC_TENANT_CLAIM = os.getenv("OIDC_TENANT_CLAIM", "tenant_id")
 OIDC_VIEWER_ROLES = {
     value.strip()
     for value in os.getenv(
@@ -526,6 +561,28 @@ WEBHOOK_GLOBAL_RATE_LIMIT = int(os.getenv("WEBHOOK_GLOBAL_RATE_LIMIT", "120"))
 WEBHOOK_CALLER_RATE_LIMIT = int(os.getenv("WEBHOOK_CALLER_RATE_LIMIT", "60"))
 WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60"))
 WEBHOOK_WORKER_BATCH_SIZE = int(os.getenv("WEBHOOK_WORKER_BATCH_SIZE", "10"))
+API_DRAIN_JOBS = os.getenv(
+    "API_DRAIN_JOBS",
+    "true" if ENVIRONMENT in {"local", "development"} else "false",
+).lower() == "true"
+JOB_LEASE_SECONDS = int(os.getenv("JOB_LEASE_SECONDS", "120"))
+JOB_HEARTBEAT_INTERVAL_SECONDS = float(
+    os.getenv("JOB_HEARTBEAT_INTERVAL_SECONDS", "30")
+)
+WORKER_POLL_INTERVAL_SECONDS = float(
+    os.getenv("WORKER_POLL_INTERVAL_SECONDS", "1")
+)
+WORKER_HEARTBEAT_STALE_SECONDS = float(
+    os.getenv("WORKER_HEARTBEAT_STALE_SECONDS", "15")
+)
+MAX_PENDING_JOBS = int(os.getenv("MAX_PENDING_JOBS", "1000"))
+OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+OBSERVABILITY_ENVIRONMENT = os.getenv("OBSERVABILITY_ENVIRONMENT", ENVIRONMENT)
+CANARY_MAX_AGE_SECONDS = int(os.getenv("CANARY_MAX_AGE_SECONDS", "300"))
+CANARY_SHARED_SECRET = os.getenv("CANARY_SHARED_SECRET", "")
+METRICS_BEARER_TOKEN = os.getenv("METRICS_BEARER_TOKEN", "")
+WORKER_METRICS_HOST = os.getenv("WORKER_METRICS_HOST", "0.0.0.0")
+WORKER_METRICS_PORT = int(os.getenv("WORKER_METRICS_PORT", "9100"))
 ANALYSIS_CODE_VERSION = os.getenv("ANALYSIS_CODE_VERSION", "incident-agent/v1")
 PROMPT_VERSION = os.getenv("PROMPT_VERSION", "prompts/v1")
 

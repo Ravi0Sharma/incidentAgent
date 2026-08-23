@@ -29,6 +29,8 @@ def _production_config(**overrides):
         "OIDC_METADATA_URL": "https://identity.example.test/.well-known/openid-configuration",
         "OIDC_CLIENT_ID": "incident-agent",
         "OIDC_CLIENT_SECRET": "test-client-secret",
+        "OIDC_REDIRECT_URI": "https://incident.example.test/auth/callback",
+        "OIDC_TENANT_CLAIM": "tenant_id",
         "OIDC_VIEWER_ROLES": {
             "incident-viewer", "incident-reviewer", "incident-admin"
         },
@@ -36,10 +38,23 @@ def _production_config(**overrides):
         "OIDC_OPERATOR_ROLES": {"incident-operator", "incident-admin"},
         "REVIEW_CSRF_SECRET": "x" * 40,
         "REVIEW_SESSION_SECRET": "y" * 40,
+        "METRICS_BEARER_TOKEN": "m" * 40,
+        "CANARY_SHARED_SECRET": "c" * 40,
         "REVIEW_SESSION_MAX_AGE_SECONDS": 28800,
         "REDACTION_SALT": "environment-specific-secret",
         "CORS_ORIGINS": ["https://incident.example.test"],
         "CHECKPOINTER": "mysql",
+        "DEPLOYMENT_TENANT_ID": "arcvial",
+        "SECRETS_PROVIDER": "railway",
+        "PUBLIC_BASE_URL": "https://incident.example.test",
+        "PROCESS_ROLE": "api",
+        "MYSQL_API_USER": "incident_api",
+        "MYSQL_WORKER_USER": "incident_worker",
+        "MYSQL_POOL_SIZE": 8,
+        "MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS": 5,
+        "MYSQL_SSL_ENABLED": True,
+        "MYSQL_SSL_VERIFY_IDENTITY": True,
+        "RUNTIME_SCHEMA_DDL_ENABLED": False,
         "OPENAI_BASE_URL": "https://api.openai.example/v1",
         "OPENAI_API_KEY": "test-provider-key",
         "LOKI_URL": "https://loki.example.test",
@@ -59,6 +74,19 @@ def _production_config(**overrides):
         "LLM_INPUT_USD_PER_MILLION_TOKENS": 1.0,
         "LLM_OUTPUT_USD_PER_MILLION_TOKENS": 1.0,
         "PUBLISH_EXTERNAL": False,
+        "CONNECTORS_ENABLED": True,
+        "MODEL_ENABLED": True,
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otel.example.test/v1/traces",
+        "EGRESS_ALLOWED_HOSTS": {
+            "incident.example.test",
+            "identity.example.test",
+            "api.openai.example",
+            "loki.example.test",
+            "prometheus.example.test",
+            "otel.example.test",
+            "api.github.com",
+            "*.amazonaws.com",
+        },
     }
     values.update(overrides)
     return types.SimpleNamespace(**values)
@@ -164,6 +192,20 @@ class OperationalBaselineTests(unittest.TestCase):
 
     def test_production_configuration_accepts_safe_baseline(self):
         self.assertEqual(validate_runtime_config(_production_config()), [])
+
+    def test_secure_runtime_requires_dedicated_worker_and_safe_heartbeat(self):
+        with self.assertRaisesRegex(ValueError, "API_DRAIN_JOBS"):
+            validate_runtime_config(_production_config(API_DRAIN_JOBS=True))
+        with self.assertRaisesRegex(ValueError, "HEARTBEAT"):
+            validate_runtime_config(_production_config(
+                JOB_LEASE_SECONDS=60,
+                JOB_HEARTBEAT_INTERVAL_SECONDS=30,
+            ))
+        with self.assertRaisesRegex(ValueError, "WORKER_HEARTBEAT_STALE_SECONDS"):
+            validate_runtime_config(_production_config(
+                WORKER_POLL_INTERVAL_SECONDS=1,
+                WORKER_HEARTBEAT_STALE_SECONDS=2,
+            ))
 
     def test_production_rejects_basic_review_auth_and_shared_session_secret(self):
         with self.assertRaisesRegex(ValueError, "REVIEW_AUTH_MODE"):

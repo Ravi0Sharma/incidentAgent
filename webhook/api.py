@@ -37,6 +37,7 @@ from settings import (
     MAX_ALERT_LABELS,
     MAX_ALERTS_PER_REQUEST,
     MAX_WEBHOOK_BODY_BYTES,
+    METRICS_BEARER_TOKEN,
     REVIEW_PASSWORD,
     REVIEW_USERNAME,
     REVIEW_AUTH_MODE,
@@ -54,8 +55,11 @@ from settings import (
     OIDC_OPERATOR_ROLES,
     OIDC_REDIRECT_URI,
     OIDC_ROLE_CLAIM,
+    OIDC_TENANT_CLAIM,
     OIDC_VIEWER_ROLES,
     DEFAULT_ALERT_ENVIRONMENT,
+    DEPLOYMENT_TENANT_ID,
+    INTAKE_ENABLED,
     SUPPORTED_INCIDENT_ENVIRONMENTS,
     WEBHOOK_SHARED_SECRET,
     WEBHOOK_REPLAY_WINDOW_SECONDS,
@@ -63,6 +67,9 @@ from settings import (
     WEBHOOK_CALLER_RATE_LIMIT,
     WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
     WEBHOOK_WORKER_BATCH_SIZE,
+    API_DRAIN_JOBS,
+    CANARY_SHARED_SECRET,
+    WORKER_HEARTBEAT_STALE_SECONDS,
 )
 from utils.service_registry import list_services
 
@@ -80,9 +87,12 @@ from webhook.intake_stats import (
 from webhook.replay import ReplayError, validate_and_record_nonce
 from webhook.rate_limit import allow as allow_rate_limit
 from webhook.incident_store import (
+    QueueCapacityError,
     append_event,
-    create_revision,
+    canary_job_status,
     enqueue_reprocessing,
+    get_or_create_incident_id,
+    operational_snapshot,
     readiness_check,
     record_event_and_enqueue,
     record_postmortem_draft,
@@ -90,6 +100,10 @@ from webhook.incident_store import (
     replay_dead_letter,
 )
 from webhook.worker import drain as drain_jobs
+from webhook.job_handler import (
+    run_incident_job as _run_incident_job,
+    run_normalized_alert as _run_normalized_alert,
+)
 from webhook.interpretation import (
     parse_interpretation
 )
@@ -109,12 +123,10 @@ from webhook.views import (
     render_revision_diff,
 )
 from utils.audit import record_audit_event
-from utils.incident_ids import (
-    get_or_create_incident_id,
-    next_incident_id
-)
+from utils.incident_ids import next_incident_id
 from utils.logging import emit_log_event
-from utils.metrics import increment, prometheus_text
+from utils.metrics import increment, prometheus_gauges, prometheus_text
+from utils.mysql import pool_stats
 from utils.runtime_config import (
     SECURE_RUNTIME_MODES,
     validate_runtime_config,
@@ -178,6 +190,7 @@ def _basic_principal(request):
             "identity": "local-unauthenticated",
             "roles": {"viewer", "decision", "operator"},
             "auth_mode": "local",
+            "tenant": DEPLOYMENT_TENANT_ID,
         }
     header = request.headers.get("authorization", "")
     if not header.startswith("Basic "):
@@ -198,6 +211,7 @@ def _basic_principal(request):
         "identity": "basic:" + username,
         "roles": {"viewer", "decision", "operator"},
         "auth_mode": "basic",
+        "tenant": DEPLOYMENT_TENANT_ID,
     }
 
 
@@ -208,6 +222,10 @@ def _claim_roles(claims):
     if isinstance(value, (list, tuple, set)):
         return {str(item) for item in value if str(item)}
     return set()
+
+
+def _claim_tenant(claims):
+    return str(claims.get(OIDC_TENANT_CLAIM, "")).strip()
 
 
 def _oidc_principal(request):
@@ -226,6 +244,9 @@ def _oidc_principal(request):
                 and int(session_claims.get("exp", 0)) >= int(time.time())
             ):
                 roles = _claim_roles(session_claims)
+                tenant = _claim_tenant(session_claims)
+                if tenant != DEPLOYMENT_TENANT_ID:
+                    return None
                 stable_id = hashlib.sha256(
                     (
                         str(session_claims["iss"])
@@ -237,6 +258,7 @@ def _oidc_principal(request):
                     "identity": "oidc:" + stable_id,
                     "roles": roles,
                     "auth_mode": "oidc",
+                    "tenant": tenant,
                 }
         except (TypeError, ValueError):
             return None
@@ -267,8 +289,9 @@ def _oidc_principal(request):
     except Exception:
         return None
     roles = _claim_roles(claims)
+    tenant = _claim_tenant(claims)
     subject = str(claims.get("sub", ""))
-    if not subject:
+    if not subject or tenant != DEPLOYMENT_TENANT_ID:
         return None
     stable_id = hashlib.sha256(
         (str(claims.get("iss", OIDC_ISSUER)) + "\0" + subject).encode("utf-8")
@@ -277,6 +300,7 @@ def _oidc_principal(request):
         "identity": "oidc:" + stable_id,
         "roles": roles,
         "auth_mode": "oidc",
+        "tenant": tenant,
     }
 
 
@@ -512,10 +536,26 @@ def _safe_local_redirect(value, default="/"):
 @app.middleware("http")
 async def protect_reviewer_surface(request, call_next):
     path = request.url.path
+    if (
+        path in {"/alerts", "/v1/alerts"}
+        and request.method == "POST"
+        and not INTAKE_ENABLED
+    ):
+        increment("alerts", outcome="intake_disabled")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "incident intake is disabled",
+                "code": "intake_disabled",
+            },
+            headers={"Retry-After": "60"},
+        )
     if path in {
         "/healthz", "/readyz", "/metrics", "/auth/login", "/auth/callback"
     } or (
         path in {"/alerts", "/v1/alerts"} and request.method == "POST"
+    ) or (
+        path.startswith("/v1/canary/jobs/") and request.method == "GET"
     ):
         return await call_next(request)
     action = "view"
@@ -629,7 +669,12 @@ async def review_callback(request: Request):
         return JSONResponse(status_code=401, content={"error": "OIDC login failed."})
     subject = str(claims.get("sub", ""))
     roles = _claim_roles(claims)
-    if not subject or not (roles & set(OIDC_VIEWER_ROLES)):
+    tenant = _claim_tenant(claims)
+    if (
+        not subject
+        or tenant != DEPLOYMENT_TENANT_ID
+        or not (roles & set(OIDC_VIEWER_ROLES))
+    ):
         request.session.clear()
         return JSONResponse(
             status_code=403,
@@ -643,6 +688,7 @@ async def review_callback(request: Request):
             int(time.time()) + REVIEW_SESSION_MAX_AGE_SECONDS,
         ),
         OIDC_ROLE_CLAIM: sorted(roles),
+        OIDC_TENANT_CLAIM: tenant,
     }
     return_to = _safe_local_redirect(
         request.session.pop("review_return_to", "/")
@@ -660,77 +706,6 @@ app.mount(
     StaticFiles(directory=HTML_OUTPUT_DIR),
     name="output"
 )
-
-
-async def _run_normalized_alert(normalized, analysis_revision=None, latest_event_id=None):
-    thread_id = normalized["incident_id"]
-    config = {
-        "configurable": {
-            "thread_id": thread_id
-        }
-    }
-
-    lifecycle = registry.get_lifecycle(thread_id)
-    if lifecycle is None:
-        registry.transition_lifecycle(thread_id, "received", "validated webhook alert")
-        registry.transition_lifecycle(thread_id, "collecting", "workflow started")
-        registry.transition_lifecycle(thread_id, "analyzing", "evidence collection started")
-    elif lifecycle["status"] == "resolved":
-        registry.reopen_incident(
-            thread_id,
-            "new firing observation requires a new analysis revision",
-        )
-    elif lifecycle["status"] == "awaiting_analysis_review":
-        registry.transition_lifecycle(thread_id, "analyzing", "new observation requires analysis revision", lifecycle["version"])
-    emit_log_event("workflow_started", incident_id=thread_id, node="webhook")
-    state = await graph.ainvoke(
-        {
-            "alert": normalized,
-            "execution_log": []
-        },
-        config=config
-    )
-
-    sync_registry(thread_id, normalized, state, analysis_revision, latest_event_id)
-    registry.transition_lifecycle(
-        thread_id,
-        "awaiting_analysis_review" if is_awaiting_review(state) else "completed",
-        "human review required" if is_awaiting_review(state) else "workflow completed",
-    )
-    emit_log_event(
-        "workflow_paused" if is_awaiting_review(state) else "workflow_completed",
-        incident_id=thread_id,
-        node="webhook",
-    )
-
-    return {
-        "incident_id": thread_id,
-        "alertname": normalized["alertname"],
-        "status": (
-            "awaiting_review"
-            if is_awaiting_review(state)
-            else "completed"
-        )
-    }
-
-
-async def _run_incident_job(job):
-    """Worker handler: revisions are created only after the job has a lease."""
-    normalized = job["payload"]
-    thread_id = job["incident_id"]
-    revision = create_revision(
-        thread_id,
-        "reprocessing stored event" if job["kind"] == "reprocess" else "new alert observation",
-        run_context=job.get("run_context"),
-    )
-    if normalized.get("status") == "resolved":
-        return {
-            "incident_id": thread_id,
-            "revision": revision,
-            "resolution": registry.resolve_incident(thread_id),
-        }
-    result = await _run_normalized_alert(normalized, revision, job["event_id"])
-    return {**result, "revision": revision}
 
 
 async def _drain_incident_jobs():
@@ -1393,21 +1368,57 @@ async def alerts(request: Request, background_tasks: BackgroundTasks = None):
     results = []
 
     for alert in incoming:
+        labels = alert.get("labels", {}) if isinstance(alert, dict) else {}
+        supplied_tenant = str(
+            labels.get("tenant_id") or labels.get("tenant") or ""
+        ).strip()
+        if supplied_tenant and supplied_tenant != DEPLOYMENT_TENANT_ID:
+            record_rejection("tenant_mismatch")
+            increment("alerts", outcome="tenant_mismatch")
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "alert tenant does not match this deployment",
+                    "code": "tenant_mismatch",
+                },
+            )
         normalized = normalize_grafana_alert(alert)
+        normalized["tenant_id"] = DEPLOYMENT_TENANT_ID
         normalized["incident_id"] = get_or_create_incident_id(
             normalized
         )
         idempotency_key = hashlib.sha256(
             json.dumps(alert, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
-        event = record_event_and_enqueue(
-            normalized["incident_id"],
-            idempotency_key,
-            normalized["status"],
-            normalized,
-            event_time=normalized.get("started_at"),
-            source_time=normalized.get("ended_at") or normalized.get("started_at"),
-        )
+        try:
+            event = record_event_and_enqueue(
+                normalized["incident_id"],
+                idempotency_key,
+                normalized["status"],
+                normalized,
+                event_time=normalized.get("started_at"),
+                source_time=normalized.get("ended_at") or normalized.get("started_at"),
+            )
+        except QueueCapacityError as exc:
+            record_rejection("queue_capacity")
+            increment("alerts", outcome="queue_capacity_rejected")
+            emit_log_event(
+                "alert_rejected",
+                severity="WARNING",
+                incident_id=normalized["incident_id"],
+                node="webhook",
+                error_category="queue_capacity",
+                request_id=request.headers.get("x-request-id"),
+            )
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": str(exc),
+                    "code": "queue_capacity",
+                    "processed_before_rejection": len(results),
+                },
+                headers={"Retry-After": "30"},
+            )
         if not event["inserted"]:
             increment("alerts", outcome="deduplicated")
             emit_log_event("alert_deduplicated", incident_id=normalized["incident_id"], node="webhook", request_id=request.headers.get("x-request-id"))
@@ -1427,7 +1438,11 @@ async def alerts(request: Request, background_tasks: BackgroundTasks = None):
             "status": "accepted",
         })
 
-    if background_tasks and any(result["status"] == "accepted" for result in results):
+    if (
+        API_DRAIN_JOBS
+        and background_tasks
+        and any(result["status"] == "accepted" for result in results)
+    ):
         background_tasks.add_task(_drain_incident_jobs)
 
     return {
@@ -1440,9 +1455,15 @@ async def alerts(request: Request, background_tasks: BackgroundTasks = None):
 async def replay_dead_letter_job(job_id: int, payload: dict = None, background_tasks: BackgroundTasks = None):
     try:
         result = replay_dead_letter(job_id, run_context=payload or None)
+    except QueueCapacityError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc), "code": "queue_capacity"},
+            headers={"Retry-After": "30"},
+        )
     except ValueError as exc:
         return JSONResponse(status_code=404, content={"error": str(exc)})
-    if background_tasks:
+    if API_DRAIN_JOBS and background_tasks:
         background_tasks.add_task(_drain_incident_jobs)
     record_audit_event("dead_letter_replayed", result["incident_id"], job_id=job_id)
     increment("dead_letter_replays")
@@ -1453,9 +1474,15 @@ async def replay_dead_letter_job(job_id: int, payload: dict = None, background_t
 async def reprocess_incident(thread_id: str, payload: dict = None, background_tasks: BackgroundTasks = None):
     try:
         result = enqueue_reprocessing(thread_id, run_context=payload or None)
+    except QueueCapacityError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc), "code": "queue_capacity"},
+            headers={"Retry-After": "30"},
+        )
     except ValueError as exc:
         return JSONResponse(status_code=404, content={"error": str(exc)})
-    if background_tasks:
+    if API_DRAIN_JOBS and background_tasks:
         background_tasks.add_task(_drain_incident_jobs)
     record_audit_event("incident_reprocessing_requested", thread_id, run_context=result["run_context"])
     increment("reprocessing", outcome="accepted")
@@ -1691,18 +1718,52 @@ async def healthz():
     return {"status": "ok"}
 
 
+@app.get("/v1/canary/jobs/{job_id}")
+async def canary_status(job_id: int, incident_id: str, request: Request):
+    supplied = request.headers.get("x-canary-token", "")
+    if not CANARY_SHARED_SECRET or not hmac.compare_digest(
+        supplied,
+        CANARY_SHARED_SECRET,
+    ):
+        return JSONResponse(status_code=401, content={"error": "invalid canary token"})
+    status = canary_job_status(job_id, incident_id)
+    if status is None:
+        return JSONResponse(status_code=404, content={"error": "canary job not found"})
+    return status
+
+
 @app.get("/readyz")
 async def readyz():
     try:
         validate_runtime_config(__import__("settings"))
     except ValueError as exc:
         return JSONResponse(status_code=503, content={"status": "not_ready", "error": str(exc)})
-    dependencies = readiness_check()
-    if dependencies["database"] != "ready":
+    dependencies = readiness_check(
+        require_worker=not API_DRAIN_JOBS,
+        worker_max_age_seconds=WORKER_HEARTBEAT_STALE_SECONDS,
+    )
+    if (
+        dependencies["database"] != "ready"
+        or dependencies["worker"]["status"] == "unavailable"
+    ):
         return JSONResponse(status_code=503, content={"status": "not_ready", "dependencies": dependencies})
     return {"status": "ready", "dependencies": dependencies}
 
 
 @app.get("/metrics", include_in_schema=False)
-async def metrics():
-    return HTMLResponse(prometheus_text(), media_type="text/plain; version=0.0.4; charset=utf-8")
+async def metrics(request: Request):
+    if METRICS_BEARER_TOKEN:
+        supplied = request.headers.get("authorization", "")
+        if not hmac.compare_digest(supplied, "Bearer " + METRICS_BEARER_TOKEN):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "metrics authentication is required"},
+            )
+    gauges = operational_snapshot(WORKER_HEARTBEAT_STALE_SECONDS)
+    for name, value in pool_stats().items():
+        gauges[f"mysql_pool_{name}"] = value
+    body = prometheus_text() + prometheus_gauges(gauges)
+    return HTMLResponse(
+        body,
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )

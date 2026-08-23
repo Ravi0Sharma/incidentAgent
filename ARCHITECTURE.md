@@ -22,9 +22,14 @@ event, lifecycle, pending review and checkpoint records are durable MySQL
 state. Canonical schemas and invariants are listed in
 [`CANONICAL_SCHEMAS.md`](CANONICAL_SCHEMAS.md).
 
-The production target replaces the in-process worker with independently
-deployed workers, object storage, RBAC, immutable audit records and outbox-
-based external writes. No automatic remediation exists in either architecture.
+Local development may still drain jobs from the API when `API_DRAIN_JOBS=true`.
+Shadow and production reject that setting and require the independent
+`scripts/run_worker.py` process. Durable worker heartbeats, renewable job and
+incident leases, retry/dead-letter state and bounded queue admission are stored
+in MySQL. The remaining production target adds versioned migrations,
+connection pooling, object storage, validated multi-host behavior, immutable
+audit records and outbox-based external writes. No automatic remediation
+exists in either architecture.
 
 ## Decisions awaiting ADRs
 

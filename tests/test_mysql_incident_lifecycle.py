@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from webhook import registry
 from webhook import rate_limit
 from webhook.incident_store import (
+    QueueCapacityError,
     claim_next_job,
     complete_job,
     create_revision,
@@ -15,7 +16,10 @@ from webhook.incident_store import (
     list_events,
     record_event,
     record_event_and_enqueue,
+    record_worker_heartbeat,
+    renew_job_lease,
     replay_dead_letter,
+    worker_runtime_status,
 )
 
 
@@ -24,16 +28,21 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
 
     def setUp(self):
         self.incident_id = "INC-TEST-" + uuid.uuid4().hex[:16]
+        self.other_incident_id = "INC-TEST-" + uuid.uuid4().hex[:16]
+        self.worker_id = "worker-test-" + uuid.uuid4().hex[:16]
 
     def tearDown(self):
         with registry._connection() as conn, conn.cursor() as cur:
-            cur.execute("DELETE FROM incident_dead_letters WHERE incident_id=%s", (self.incident_id,))
-            cur.execute("DELETE FROM incident_jobs WHERE incident_id=%s", (self.incident_id,))
-            cur.execute("DELETE FROM pending_reviews WHERE thread_id=%s", (self.incident_id,))
-            cur.execute("DELETE FROM incident_lifecycle WHERE thread_id=%s", (self.incident_id,))
-            cur.execute("DELETE FROM incident_revisions WHERE incident_id=%s", (self.incident_id,))
-            cur.execute("DELETE FROM incident_revision_heads WHERE incident_id=%s", (self.incident_id,))
-            cur.execute("DELETE FROM incident_events WHERE incident_id=%s", (self.incident_id,))
+            for incident_id in (self.incident_id, self.other_incident_id):
+                cur.execute("DELETE FROM incident_job_locks WHERE incident_id=%s", (incident_id,))
+                cur.execute("DELETE FROM incident_dead_letters WHERE incident_id=%s", (incident_id,))
+                cur.execute("DELETE FROM incident_jobs WHERE incident_id=%s", (incident_id,))
+                cur.execute("DELETE FROM pending_reviews WHERE thread_id=%s", (incident_id,))
+                cur.execute("DELETE FROM incident_lifecycle WHERE thread_id=%s", (incident_id,))
+                cur.execute("DELETE FROM incident_revisions WHERE incident_id=%s", (incident_id,))
+                cur.execute("DELETE FROM incident_revision_heads WHERE incident_id=%s", (incident_id,))
+                cur.execute("DELETE FROM incident_events WHERE incident_id=%s", (incident_id,))
+            cur.execute("DELETE FROM incident_workers WHERE worker_id=%s", (self.worker_id,))
             conn.commit()
 
     def test_event_idempotency_revision_and_lifecycle_are_durable(self):
@@ -94,6 +103,25 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
         self.assertEqual(job["event_id"], late["event_id"])
         complete_job(job["job_id"], "test-worker")
 
+    def test_alertmanager_zulu_timestamp_is_persisted_as_utc_datetime(self):
+        event = record_event_and_enqueue(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "zulu").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatency"},
+            event_time="2026-07-14T10:03:12.000Z",
+            source_time="2026-07-14T12:03:12.000+02:00",
+            clock_quality="source_timestamp_present",
+        )
+
+        stored = next(
+            item
+            for item in list_events(self.incident_id)
+            if item["event_id"] == event["event_id"]
+        )
+        self.assertEqual(stored["event_time"], "2026-07-14T10:03:12")
+        self.assertEqual(stored["source_time"], "2026-07-14T10:03:12")
+
     def test_exhausted_job_is_dead_lettered_and_can_be_replayed(self):
         event = record_event_and_enqueue(
             self.incident_id,
@@ -107,6 +135,76 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
         self.assertEqual(len(dead), 1)
         self.assertNotIn("secret", str(dead[0]))
         self.assertTrue(replay_dead_letter(event["job_id"])["replayed"])
+
+    def test_queue_capacity_rejects_before_event_or_job_is_committed(self):
+        with self.assertRaisesRegex(QueueCapacityError, "admission is disabled"):
+            record_event_and_enqueue(
+                self.incident_id,
+                hashlib.sha256((self.incident_id + "capacity").encode()).hexdigest(),
+                "firing",
+                {"alertname": "HighLatency"},
+                max_pending_jobs=0,
+            )
+        self.assertEqual(list_events(self.incident_id), [])
+
+    def test_reprocessing_uses_the_same_queue_capacity_gate(self):
+        record_event(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "stored").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatency"},
+        )
+        with self.assertRaisesRegex(QueueCapacityError, "admission is disabled"):
+            enqueue_reprocessing(self.incident_id, max_pending_jobs=0)
+
+    def test_worker_liveness_requires_a_running_recent_heartbeat(self):
+        record_worker_heartbeat(self.worker_id, "running")
+        self.assertEqual(worker_runtime_status(15)["status"], "ready")
+        record_worker_heartbeat(self.worker_id, "stopped")
+        status = worker_runtime_status(15)
+        self.assertEqual(status["status"], "unavailable")
+        self.assertEqual(status["active_workers"], 0)
+
+    def test_incident_lock_blocks_parallel_job_and_expired_lease_recovers(self):
+        first = record_event_and_enqueue(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "first-job").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatency"},
+        )
+        record_event_and_enqueue(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "second-job").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatencyUpdated"},
+        )
+        claimed = claim_next_job("worker-a", lease_seconds=120)
+        self.assertEqual(claimed["job_id"], first["job_id"])
+        self.assertIsNone(claim_next_job("worker-b", lease_seconds=120))
+
+        renewed_until = renew_job_lease(first["job_id"], "worker-a", 180)
+        self.assertTrue(renewed_until)
+        with registry._connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE incident_jobs SET leased_until=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND "
+                "WHERE job_id=%s",
+                (first["job_id"],),
+            )
+            cur.execute(
+                "UPDATE incident_job_locks SET leased_until=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND "
+                "WHERE incident_id=%s",
+                (self.incident_id,),
+            )
+            conn.commit()
+
+        recovered = claim_next_job("worker-b", lease_seconds=120)
+        self.assertEqual(recovered["job_id"], first["job_id"])
+        self.assertEqual(recovered["attempt_count"], 2)
+        complete_job(recovered["job_id"], "worker-b")
+
+        next_job = claim_next_job("worker-b", lease_seconds=120)
+        self.assertEqual(next_job["incident_id"], self.incident_id)
+        complete_job(next_job["job_id"], "worker-b")
 
     def test_reprocessing_records_selected_versions_without_new_event(self):
         original = record_event(

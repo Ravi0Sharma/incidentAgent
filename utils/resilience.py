@@ -6,6 +6,7 @@ import time
 import httpx
 
 from utils.redaction import redact_message
+from utils.egress import assert_egress_url
 
 from settings import (
     SOURCE_CIRCUIT_OPEN_SECONDS,
@@ -55,6 +56,7 @@ _LOCK = threading.Lock()
 
 
 def request(source, method, url, **kwargs):
+    assert_egress_url(url, source=source)
     policy = SOURCE_REQUEST_POLICIES.get(
         source,
         {

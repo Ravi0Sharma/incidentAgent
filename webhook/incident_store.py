@@ -9,35 +9,48 @@ import pymysql
 from settings import (
     ANALYSIS_CODE_VERSION,
     MYSQL_DATABASE,
-    MYSQL_HOST,
-    MYSQL_PASSWORD,
-    MYSQL_PORT,
-    MYSQL_USER,
+    MAX_PENDING_JOBS,
     OPENAI_MODEL,
     PROMPT_VERSION,
+    RUNTIME_SCHEMA_DDL_ENABLED,
 )
+from utils.mysql import connection as mysql_connection
 from utils.redaction import redact_data
 from utils.config_versions import config_version_manifest
+from utils.evidence import (
+    CANONICAL_EVIDENCE_SCHEMA_VERSION,
+    canonical_evidence,
+    integrity_hash as evidence_integrity_hash,
+)
 
 
 class EvidenceIntegrityError(ValueError):
     """Stored evidence no longer matches the immutable reviewed snapshot."""
 
 
+class QueueCapacityError(RuntimeError):
+    """The durable analysis queue reached its configured admission limit."""
+
+
 def _connection():
-    return pymysql.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        charset="utf8mb4",
-        autocommit=False,
-    )
+    return mysql_connection()
 
 
 def _now():
     return datetime.now(timezone.utc)
+
+
+def _mysql_datetime(value):
+    """Convert accepted ISO-8601 event times to UTC MySQL DATETIME values."""
+    if value is None or isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed is None:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 def _json(value):
@@ -75,6 +88,8 @@ def _add_column_if_missing(cur, table, column, definition):
 
 
 def ensure_schema():
+    if not RUNTIME_SCHEMA_DDL_ENABLED:
+        return
     with _connection() as conn, conn.cursor() as cur:
         cur.execute(
             "CREATE TABLE IF NOT EXISTS incident_events ("
@@ -83,6 +98,19 @@ def ensure_schema():
             "event_time DATETIME(6) NULL, source_time DATETIME(6) NULL, "
             "received_at DATETIME(6) NOT NULL, clock_quality VARCHAR(64) NOT NULL, "
             "payload JSON NOT NULL, INDEX incident_events_timeline (incident_id,event_time,event_id))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_id_sequence ("
+            "sequence_id TINYINT PRIMARY KEY, next_value BIGINT NOT NULL)"
+        )
+        cur.execute(
+            "INSERT INTO incident_id_sequence (sequence_id,next_value) "
+            "VALUES (1,100001) ON DUPLICATE KEY UPDATE sequence_id=VALUES(sequence_id)"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_id_map ("
+            "incident_key CHAR(64) PRIMARY KEY, incident_id VARCHAR(128) NOT NULL UNIQUE, "
+            "created_at DATETIME(6) NOT NULL)"
         )
         _add_column_if_missing(
             cur, "incident_events", "clock_quality",
@@ -160,6 +188,29 @@ def ensure_schema():
             "updated_at DATETIME(6) NOT NULL, INDEX incident_jobs_claim (status,available_at,leased_until), "
             "INDEX incident_jobs_incident (incident_id,job_id))"
         )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_job_locks ("
+            "incident_id VARCHAR(128) PRIMARY KEY, job_id BIGINT NOT NULL, "
+            "worker_id VARCHAR(128) NOT NULL, leased_until DATETIME(6) NOT NULL, "
+            "updated_at DATETIME(6) NOT NULL, "
+            "INDEX incident_job_locks_lease (leased_until))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_queue_control ("
+            "control_id TINYINT PRIMARY KEY, updated_at DATETIME(6) NOT NULL)"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_workers ("
+            "worker_id VARCHAR(128) PRIMARY KEY, status VARCHAR(32) NOT NULL, "
+            "current_job_id BIGINT NULL, started_at DATETIME(6) NOT NULL, "
+            "last_seen DATETIME(6) NOT NULL, "
+            "INDEX incident_workers_liveness (status,last_seen))"
+        )
+        cur.execute(
+            "INSERT INTO incident_queue_control (control_id,updated_at) "
+            "VALUES (1,%s) ON DUPLICATE KEY UPDATE control_id=VALUES(control_id)",
+            (_now(),),
+        )
         _add_column_if_missing(cur, "incident_jobs", "run_context", "run_context JSON NULL")
         cur.execute(
             "CREATE TABLE IF NOT EXISTS incident_dead_letters ("
@@ -171,7 +222,47 @@ def ensure_schema():
         conn.commit()
 
 
-def readiness_check():
+def worker_runtime_status(max_age_seconds=15):
+    """Return independently observed worker liveness from durable heartbeats."""
+    ensure_schema()
+    cutoff = _now() - timedelta(seconds=float(max_age_seconds))
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*),MAX(last_seen) FROM incident_workers "
+            "WHERE status='running' AND last_seen>=%s",
+            (cutoff,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+    return {
+        "status": "ready" if int(row[0]) else "unavailable",
+        "active_workers": int(row[0]),
+        "last_seen": row[1].isoformat() if row[1] else None,
+    }
+
+
+def record_worker_heartbeat(worker_id, status="running", current_job_id=None):
+    """Publish worker process liveness without coupling it to the API process."""
+    if status not in {"running", "stopped"}:
+        raise ValueError("worker status must be running or stopped")
+    now = _now()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO incident_workers "
+            "(worker_id,status,current_job_id,started_at,last_seen) "
+            "VALUES (%s,%s,%s,%s,%s) "
+            "ON DUPLICATE KEY UPDATE "
+            "started_at=IF(status='stopped',VALUES(started_at),started_at),"
+            "status=VALUES(status),"
+            "current_job_id=VALUES(current_job_id),last_seen=VALUES(last_seen),"
+            "worker_id=VALUES(worker_id)",
+            (worker_id, status, current_job_id, now, now),
+        )
+        conn.commit()
+    return now.isoformat()
+
+
+def readiness_check(require_worker=False, worker_max_age_seconds=15):
     """Verify that the configured durable store is reachable and schema-ready."""
     try:
         ensure_schema()
@@ -179,9 +270,77 @@ def readiness_check():
             cur.execute("SELECT 1")
             cur.fetchone()
             conn.commit()
-        return {"database": "ready", "queue": "ready", "schema": "ready"}
+        worker = (
+            worker_runtime_status(worker_max_age_seconds)
+            if require_worker
+            else {"status": "not_required", "active_workers": 0, "last_seen": None}
+        )
+        return {
+            "database": "ready",
+            "queue": "ready",
+            "schema": "ready",
+            "worker": worker,
+        }
     except pymysql.MySQLError as exc:
         return {"database": "unavailable", "queue": "unavailable", "schema": "unknown", "error": str(exc)}
+
+
+def operational_snapshot(worker_max_age_seconds=15):
+    """Read shared queue/worker gauges for the API Prometheus scrape surface."""
+    cutoff = _now() - timedelta(seconds=float(worker_max_age_seconds))
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT "
+            "SUM(status='pending'),SUM(status='leased'),SUM(status='dead_letter'),"
+            "COALESCE(TIMESTAMPDIFF(SECOND,MIN(CASE WHEN status='pending' "
+            "THEN created_at END),UTC_TIMESTAMP(6)),0) FROM incident_jobs"
+        )
+        queue_row = cur.fetchone()
+        cur.execute(
+            "SELECT COUNT(*) FROM incident_workers "
+            "WHERE status='running' AND last_seen>=%s",
+            (cutoff,),
+        )
+        active_workers = int(cur.fetchone()[0])
+        cur.execute("SELECT COUNT(*) FROM incident_job_locks")
+        incident_locks = int(cur.fetchone()[0])
+        conn.commit()
+    return {
+        "queue_pending": int(queue_row[0] or 0),
+        "queue_leased": int(queue_row[1] or 0),
+        "queue_dead_letter": int(queue_row[2] or 0),
+        "queue_oldest_pending_seconds": max(int(queue_row[3] or 0), 0),
+        "active_workers": active_workers,
+        "incident_locks": incident_locks,
+    }
+
+
+def canary_job_status(job_id, incident_id):
+    """Return a bounded status view with no incident payload or evidence content."""
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT status,attempt_count,created_at,updated_at FROM incident_jobs "
+            "WHERE job_id=%s AND incident_id=%s",
+            (job_id, incident_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cur.execute(
+            "SELECT COUNT(*) FROM incident_analysis_revisions WHERE incident_id=%s",
+            (incident_id,),
+        )
+        revisions = int(cur.fetchone()[0])
+        conn.commit()
+    return {
+        "job_id": int(job_id),
+        "incident_id": incident_id,
+        "status": row[0],
+        "attempt_count": int(row[1]),
+        "created_at": row[2].isoformat(),
+        "updated_at": row[3].isoformat(),
+        "analysis_revisions": revisions,
+    }
 
 
 def _insert_event(cur, incident_id, idempotency_key, event_type, payload, event_time, source_time, clock_quality):
@@ -195,8 +354,8 @@ def _insert_event(cur, incident_id, idempotency_key, event_type, payload, event_
                 incident_id,
                 idempotency_key,
                 event_type,
-                event_time,
-                source_time,
+                _mysql_datetime(event_time),
+                _mysql_datetime(source_time),
                 received_at,
                 clock_quality,
                 _json(payload),
@@ -207,6 +366,59 @@ def _insert_event(cur, incident_id, idempotency_key, event_type, payload, event_
         cur.execute("SELECT event_id, received_at FROM incident_events WHERE idempotency_key=%s", (idempotency_key,))
         row = cur.fetchone()
         return False, row[0], row[1]
+
+
+def get_or_create_incident_id(alert):
+    """Allocate retry-stable incident IDs atomically in shared MySQL."""
+    alert = alert or {}
+    supplied = str(alert.get("incident_id", ""))
+    if supplied.startswith("INC-") and supplied[4:].isdigit() and len(supplied) >= 10:
+        return supplied
+    fingerprint = (
+        alert.get("fingerprint")
+        or alert.get("upstream_incident_id")
+        or alert.get("alertname", "unknown")
+    )
+    raw_key = "|".join(
+        [
+            str(fingerprint),
+            str(alert.get("service", "unknown")),
+            str(alert.get("started_at", "unknown")),
+            str(alert.get("tenant_id", "unknown")),
+        ]
+    )
+    incident_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT incident_id FROM incident_id_map WHERE incident_key=%s",
+            (incident_key,),
+        )
+        row = cur.fetchone()
+        if row:
+            conn.commit()
+            return row[0]
+        cur.execute(
+            "SELECT next_value FROM incident_id_sequence "
+            "WHERE sequence_id=1 FOR UPDATE"
+        )
+        sequence = cur.fetchone()
+        if not sequence:
+            conn.rollback()
+            raise RuntimeError("incident ID sequence is not initialized")
+        value = int(sequence[0])
+        incident_id = f"INC-{value:06d}"
+        cur.execute(
+            "UPDATE incident_id_sequence SET next_value=%s WHERE sequence_id=1",
+            (value + 1,),
+        )
+        cur.execute(
+            "INSERT INTO incident_id_map (incident_key,incident_id,created_at) "
+            "VALUES (%s,%s,%s)",
+            (incident_key, incident_id, _now()),
+        )
+        conn.commit()
+    return incident_id
 
 
 def record_event(incident_id, idempotency_key, event_type, payload, event_time=None, source_time=None, clock_quality="unverified"):
@@ -224,7 +436,30 @@ def _job_key(event_id, kind, salt=""):
     return hashlib.sha256(f"{kind}:{event_id}:{salt}".encode("utf-8")).hexdigest()
 
 
-def record_event_and_enqueue(incident_id, idempotency_key, event_type, payload, event_time=None, source_time=None, clock_quality="unverified", run_context=None):
+def _assert_queue_capacity(cur, maximum=None):
+    maximum = int(MAX_PENDING_JOBS if maximum is None else maximum)
+    if maximum <= 0:
+        raise QueueCapacityError("analysis queue admission is disabled")
+    cur.execute(
+        "SELECT updated_at FROM incident_queue_control "
+        "WHERE control_id=1 FOR UPDATE"
+    )
+    cur.fetchone()
+    cur.execute(
+        "SELECT COUNT(*) FROM incident_jobs WHERE status IN ('pending','leased')"
+    )
+    active = int(cur.fetchone()[0])
+    if active >= maximum:
+        raise QueueCapacityError(
+            f"analysis queue capacity reached ({active}/{maximum})"
+        )
+    cur.execute(
+        "UPDATE incident_queue_control SET updated_at=%s WHERE control_id=1",
+        (_now(),),
+    )
+
+
+def record_event_and_enqueue(incident_id, idempotency_key, event_type, payload, event_time=None, source_time=None, clock_quality="unverified", run_context=None, max_pending_jobs=None):
     """Atomically append a new event and its durable analysis job before ACK."""
     ensure_schema()
     now = _now()
@@ -235,6 +470,11 @@ def record_event_and_enqueue(incident_id, idempotency_key, event_type, payload, 
         if not inserted:
             conn.commit()
             return {"inserted": False, "event_id": event_id, "queued": False, "received_at": received_at.isoformat()}
+        try:
+            _assert_queue_capacity(cur, max_pending_jobs)
+        except QueueCapacityError:
+            conn.rollback()
+            raise
         key = _job_key(event_id, "analyze")
         cur.execute(
             "INSERT INTO incident_jobs "
@@ -304,35 +544,125 @@ def create_revision(incident_id, reason, expected_revision=None, run_context=Non
 
 
 def _canonical_evidence_items(state):
-    """Return bounded evidence items without review-only presentation fields."""
+    """Build the exact redacted canonical records reviewed in one revision."""
     timeline = state.get("timeline", []) or []
     if not timeline:
         timeline = (state.get("evidence_graph", {}) or {}).get("nodes", []) or []
     items = []
-    seen = set()
+    seen = {}
     for value in timeline:
         if not isinstance(value, dict) or not value.get("event_id"):
             continue
         evidence_id = str(value["event_id"])
-        if evidence_id in seen:
-            continue
-        seen.add(evidence_id)
-        payload = redact_data({
+        evidence_type = str(
+            value.get("type") or value.get("evidence_type") or "observation"
+        )[:64]
+        connector_metadata = value.get("connector_metadata", {}) or {}
+        lineage = value.get("lineage", {}) or value.get("source_lineage", {}) or {}
+        sources = {
+            str(source)
+            for source in (lineage.get("sources", []) or [])
+            if source
+        }
+        for source in (value.get("source"), connector_metadata.get("source")):
+            if source:
+                sources.add(str(source))
+        if sources:
+            source = sorted(sources)[0] if len(sources) == 1 else "multi_source_derived"
+        else:
+            source = {
+                "alert": "alertmanager",
+                "deploy": "deployments",
+                "log_group": "log_connector",
+                "metric": "metric_connector",
+            }.get(evidence_type, "unknown")
+        timestamp = (
+            value.get("original_timestamp")
+            if value.get("original_timestamp") is not None
+            else value.get("timestamp")
+            or value.get("time")
+            or value.get("first_seen")
+            or value.get("event_time")
+        )
+        received_at = (
+            value.get("received_at")
+            or connector_metadata.get("collected_at")
+            or ((state.get("alert", {}) or {}).get("received_at"))
+        )
+        observation = redact_data({
             key: item
             for key, item in value.items()
-            if key not in {"_dt", "offset", "is_anchor"}
+            if key not in {
+                "_dt",
+                "offset",
+                "is_anchor",
+                "event_id",
+                "evidence_id",
+                "evidence_schema_version",
+                "canonical_evidence_schema_version",
+                "event_time",
+                "received_at",
+                "original_timestamp",
+                "original_timezone",
+                "clock_quality",
+                "classification",
+                "integrity_hash",
+                "lineage",
+                "source_lineage",
+                "connector_metadata",
+                "collection_revision",
+                "supersedes",
+            }
         })
-        evidence_type = str(
-            payload.get("type") or payload.get("evidence_type") or "observation"
-        )[:64]
+        canonical = canonical_evidence(
+            evidence_type=evidence_type,
+            source=source,
+            payload=observation,
+            timestamp=timestamp,
+            received_at=received_at,
+            service=(
+                value.get("service")
+                or (value.get("labels", {}) or {}).get("service")
+            ),
+            environment=(
+                value.get("environment")
+                or (value.get("labels", {}) or {}).get("environment")
+                or (value.get("labels", {}) or {}).get("env")
+            ),
+            classification="confidential",
+            lineage=(connector_metadata or lineage),
+            collection_revision=(
+                connector_metadata.get("collection_revision")
+                or value.get("collection_revision")
+                or 1
+            ),
+            supersedes=value.get("supersedes"),
+        )
+        canonical["evidence_id"] = evidence_id
+        if not received_at:
+            canonical["received_at"] = None
+            canonical["collection_time_quality"] = "missing"
+        else:
+            canonical["collection_time_quality"] = "recorded"
+        payload = {
+            **canonical,
+            "payload": observation,
+        }
         digest = _evidence_content_digest(payload)
+        if evidence_id in seen:
+            if seen[evidence_id] != digest:
+                raise EvidenceIntegrityError(
+                    "one analysis revision contains conflicting evidence IDs"
+                )
+            continue
+        seen[evidence_id] = digest
         items.append({
             "evidence_id": evidence_id,
             "evidence_type": evidence_type,
             "content_sha256": digest,
             "payload": payload,
         })
-    return items
+    return sorted(items, key=lambda item: item["evidence_id"])
 
 
 def _evidence_content_digest(payload):
@@ -346,9 +676,15 @@ def _evidence_content_digest(payload):
     ).hexdigest()
 
 
-def _append_analysis_evidence(cur, incident_id, revision, state, now):
+def _append_analysis_evidence(
+    cur, incident_id, revision, state, now, evidence_items=None
+):
     """Append immutable evidence versions and link the exact analysis snapshot."""
-    for item in _canonical_evidence_items(state):
+    for item in (
+        evidence_items
+        if evidence_items is not None
+        else _canonical_evidence_items(state)
+    ):
         cur.execute(
             "SELECT evidence_record_id,version,content_sha256 "
             "FROM incident_evidence_records WHERE incident_id=%s AND evidence_id=%s "
@@ -395,11 +731,17 @@ def record_analysis_revision(incident_id, revision, state, event_id=None, run_co
     """
     ensure_schema()
     graph = (state.get("evidence_graph", {}) or {})
-    evidence_ids = sorted({
+    graph_evidence_ids = sorted({
         str(node.get("event_id"))
         for node in graph.get("nodes", [])
         if isinstance(node, dict) and node.get("event_id")
     })
+    evidence_items = _canonical_evidence_items(state)
+    evidence_ids = [item["evidence_id"] for item in evidence_items]
+    if graph_evidence_ids and graph_evidence_ids != evidence_ids:
+        raise EvidenceIntegrityError(
+            "evidence graph and canonical revision membership differ"
+        )
     candidates = []
     for candidate in ((state.get("deterministic_assessment", {}) or {}).get("candidates", []) or []):
         if not isinstance(candidate, dict):
@@ -471,7 +813,14 @@ def record_analysis_revision(incident_id, revision, state, event_id=None, run_co
                 _json(complete_run_context(run_context)), now,
             ),
         )
-        _append_analysis_evidence(cur, incident_id, revision, state, now)
+        _append_analysis_evidence(
+            cur,
+            incident_id,
+            revision,
+            state,
+            now,
+            evidence_items=evidence_items,
+        )
         conn.commit()
     return get_analysis_revision(incident_id, revision)
 
@@ -522,6 +871,16 @@ def list_evidence_records(incident_id, analysis_revision=None):
     records = []
     for row in rows:
         payload = _decode(row[5])
+        envelope_valid = (
+            isinstance(payload, dict)
+            and payload.get("evidence_schema_version")
+            == CANONICAL_EVIDENCE_SCHEMA_VERSION
+            and payload.get("evidence_id") == row[1]
+            and payload.get("evidence_type") == row[2]
+            and isinstance(payload.get("payload"), dict)
+            and payload.get("integrity_hash")
+            == evidence_integrity_hash(payload.get("payload"))
+        )
         records.append({
             "evidence_record_id": row[0],
             "evidence_id": row[1],
@@ -532,7 +891,10 @@ def list_evidence_records(incident_id, analysis_revision=None):
             "supersedes_record_id": row[6],
             "first_analysis_revision": row[7],
             "created_at": row[8].isoformat(),
-            "integrity_valid": _evidence_content_digest(payload) == row[4],
+            "integrity_valid": (
+                _evidence_content_digest(payload) == row[4]
+                and envelope_valid
+            ),
         })
     return records
 
@@ -800,36 +1162,89 @@ def list_events(incident_id):
 
 
 def claim_next_job(worker_id, lease_seconds=120):
-    """Lease a pending job. MySQL row locks prevent two workers claiming it."""
+    """Lease one job and its incident so revisions cannot run concurrently."""
     ensure_schema()
     now = _now()
     with _connection() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT job_id FROM incident_jobs WHERE "
+            "SELECT job_id,incident_id,event_id,kind,attempt_count,payload,run_context "
+            "FROM incident_jobs WHERE "
             "(status='pending' AND available_at<=%s) OR (status='leased' AND leased_until<%s) "
-            "ORDER BY job_id LIMIT 1 FOR UPDATE SKIP LOCKED",
+            "ORDER BY job_id LIMIT 20 FOR UPDATE SKIP LOCKED",
             (now, now),
+        )
+        candidates = cur.fetchall()
+        for row in candidates:
+            cur.execute(
+                "INSERT INTO incident_job_locks "
+                "(incident_id,job_id,worker_id,leased_until,updated_at) "
+                "VALUES (%s,0,'unowned',%s,%s) "
+                "ON DUPLICATE KEY UPDATE incident_id=VALUES(incident_id)",
+                (row[1], datetime(1970, 1, 1), now),
+            )
+            cur.execute(
+                "SELECT leased_until FROM incident_job_locks "
+                "WHERE incident_id=%s FOR UPDATE",
+                (row[1],),
+            )
+            lock = cur.fetchone()
+            if lock and lock[0] >= _mysql_datetime(now):
+                continue
+            lease_until = now + timedelta(seconds=lease_seconds)
+            cur.execute(
+                "UPDATE incident_job_locks SET job_id=%s,worker_id=%s,"
+                "leased_until=%s,updated_at=%s WHERE incident_id=%s",
+                (row[0], worker_id, lease_until, now, row[1]),
+            )
+            cur.execute(
+                "UPDATE incident_jobs SET status='leased',attempt_count=attempt_count+1,worker_id=%s,"
+                "leased_until=%s,updated_at=%s WHERE job_id=%s",
+                (worker_id, lease_until, now, row[0]),
+            )
+            job = list(row)
+            job[4] = int(job[4]) + 1
+            conn.commit()
+            return {
+                "job_id": job[0], "incident_id": job[1], "event_id": job[2],
+                "kind": job[3], "attempt_count": job[4],
+                "payload": _decode(job[5]),
+                "run_context": _decode(job[6]) if job[6] else default_run_context(),
+            }
+        conn.commit()
+        return None
+
+
+def renew_job_lease(job_id, worker_id, lease_seconds=120):
+    """Atomically renew both job ownership and the per-incident lock."""
+    ensure_schema()
+    now = _now()
+    lease_until = now + timedelta(seconds=lease_seconds)
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT incident_id FROM incident_jobs WHERE job_id=%s "
+            "AND status='leased' AND worker_id=%s FOR UPDATE",
+            (job_id, worker_id),
         )
         row = cur.fetchone()
         if not row:
-            conn.commit()
-            return None
-        lease_until = now + timedelta(seconds=lease_seconds)
+            conn.rollback()
+            raise ValueError("job lease is not owned by this worker")
+        incident_id = row[0]
         cur.execute(
-            "UPDATE incident_jobs SET status='leased',attempt_count=attempt_count+1,worker_id=%s,"
-            "leased_until=%s,updated_at=%s WHERE job_id=%s",
-            (worker_id, lease_until, now, row[0]),
+            "UPDATE incident_job_locks SET leased_until=%s,updated_at=%s "
+            "WHERE incident_id=%s AND job_id=%s AND worker_id=%s",
+            (lease_until, now, incident_id, job_id, worker_id),
         )
+        if not cur.rowcount:
+            conn.rollback()
+            raise ValueError("incident lease is not owned by this worker")
         cur.execute(
-            "SELECT job_id,incident_id,event_id,kind,attempt_count,payload,run_context FROM incident_jobs WHERE job_id=%s",
-            (row[0],),
+            "UPDATE incident_jobs SET leased_until=%s,updated_at=%s "
+            "WHERE job_id=%s AND status='leased' AND worker_id=%s",
+            (lease_until, now, job_id, worker_id),
         )
-        job = cur.fetchone()
         conn.commit()
-    return {
-        "job_id": job[0], "incident_id": job[1], "event_id": job[2], "kind": job[3],
-        "attempt_count": job[4], "payload": _decode(job[5]), "run_context": _decode(job[6]) if job[6] else default_run_context(),
-    }
+    return lease_until.isoformat()
 
 
 def complete_job(job_id, worker_id):
@@ -843,6 +1258,10 @@ def complete_job(job_id, worker_id):
         if not cur.rowcount:
             conn.rollback()
             raise ValueError("job lease is not owned by this worker")
+        cur.execute(
+            "DELETE FROM incident_job_locks WHERE job_id=%s AND worker_id=%s",
+            (job_id, worker_id),
+        )
         conn.commit()
 
 
@@ -858,6 +1277,10 @@ def fail_job(job, worker_id, error, max_attempts=3, retry_delay_seconds=30):
                 "WHERE job_id=%s AND status='leased' AND worker_id=%s",
                 (_json(diagnostics), now, job["job_id"], worker_id),
             )
+            updated = cur.rowcount
+            if not updated:
+                conn.rollback()
+                raise ValueError("job lease is not owned by this worker")
             cur.execute(
                 "INSERT INTO incident_dead_letters "
                 "(job_id,incident_id,event_id,kind,payload,diagnostics,failed_at) "
@@ -871,10 +1294,15 @@ def fail_job(job, worker_id, error, max_attempts=3, retry_delay_seconds=30):
                 "available_at=%s,last_error=%s,updated_at=%s WHERE job_id=%s AND status='leased' AND worker_id=%s",
                 (now + timedelta(seconds=retry_delay_seconds), _json(diagnostics), now, job["job_id"], worker_id),
             )
+            updated = cur.rowcount
             outcome = "retry"
-        if not cur.rowcount:
+        if not updated:
             conn.rollback()
             raise ValueError("job lease is not owned by this worker")
+        cur.execute(
+            "DELETE FROM incident_job_locks WHERE job_id=%s AND worker_id=%s",
+            (job["job_id"], worker_id),
+        )
         conn.commit()
     return outcome
 
@@ -893,7 +1321,7 @@ def list_dead_letters(incident_id=None):
     ]
 
 
-def replay_dead_letter(job_id, run_context=None):
+def replay_dead_letter(job_id, run_context=None, max_pending_jobs=None):
     """Create a new analysis job from dead-letter payload without external side effects."""
     ensure_schema()
     now = _now()
@@ -903,6 +1331,10 @@ def replay_dead_letter(job_id, run_context=None):
         if not row:
             raise ValueError("dead-letter job not found")
         key = _job_key(row[1], "reprocess", str(job_id))
+        cur.execute("SELECT job_id FROM incident_jobs WHERE job_key=%s", (key,))
+        existing = cur.fetchone()
+        if not existing:
+            _assert_queue_capacity(cur, max_pending_jobs)
         cur.execute(
             "INSERT INTO incident_jobs (job_key,incident_id,event_id,kind,status,available_at,payload,run_context,created_at,updated_at) "
             "VALUES (%s,%s,%s,'reprocess','pending',%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE updated_at=VALUES(updated_at)",
@@ -913,7 +1345,7 @@ def replay_dead_letter(job_id, run_context=None):
     return {"incident_id": row[0], "event_id": row[1], "replayed": True}
 
 
-def enqueue_reprocessing(incident_id, run_context=None):
+def enqueue_reprocessing(incident_id, run_context=None, max_pending_jobs=None):
     """Queue the latest stored normalized event for a versioned analysis-only rerun."""
     ensure_schema()
     context = complete_run_context(run_context)
@@ -929,12 +1361,16 @@ def enqueue_reprocessing(incident_id, run_context=None):
             raise ValueError("incident has no stored event")
         salt = json.dumps(context, sort_keys=True, separators=(",", ":"))
         key = _job_key(row[0], "reprocess", salt)
+        cur.execute("SELECT job_id FROM incident_jobs WHERE job_key=%s", (key,))
+        existing = cur.fetchone()
+        if not existing:
+            _assert_queue_capacity(cur, max_pending_jobs)
         cur.execute(
             "INSERT INTO incident_jobs (job_key,incident_id,event_id,kind,status,available_at,payload,run_context,created_at,updated_at) "
             "VALUES (%s,%s,%s,'reprocess','pending',%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE updated_at=VALUES(updated_at)",
             (key, incident_id, row[0], now, row[1], _json(context), now, now),
         )
-        job_id = cur.lastrowid
+        job_id = int(existing[0]) if existing else cur.lastrowid
         conn.commit()
     return {"incident_id": incident_id, "event_id": row[0], "job_id": job_id, "run_context": context}

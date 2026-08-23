@@ -7,6 +7,18 @@ Expired leases are reclaimable; exhausted jobs appear in `incident_dead_letters`
 Review redacted diagnostics, fix the cause, then use the authenticated replay
 endpoint. Escalate if backlog grows faster than it drains.
 
+The API and worker must run independently with `API_DRAIN_JOBS=false`; start
+the worker with `python scripts/run_worker.py`. In this mode `/healthz` only
+shows that the API process is alive, while `/readyz` also requires a fresh row
+in `incident_workers`. A stale/missing worker therefore makes readiness fail.
+
+On `SIGTERM`/`SIGINT`, the worker stops polling, finishes its active job and
+records `stopped`. Do not manually release a non-expired lease during normal
+restart. If the process crashes, wait for `leased_until` to expire; another
+worker then reclaims the same job with a higher `attempt_count`. Alert if
+`pending` plus `leased` approaches `MAX_PENDING_JOBS`; API queue-capacity 503s
+include `Retry-After` and callers should retry the original signed request.
+
 ## Model or source outage
 
 Set `SKIP_LLM=true` to force safe deterministic/abstaining behavior. Disable

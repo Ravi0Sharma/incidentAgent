@@ -98,7 +98,17 @@ link where corrected. Claims must cite compatible evidence IDs.
 
 The canonical record now covers stable IDs, lineage, collection revision,
 event/receive time, service/environment, classification and integrity hashes
-at the normalized log boundary. Local MySQL analysis snapshots also keep an
+at the normalized log boundary. Connector rows are recursively redacted before
+they can enter checkpointed graph state. Metrics and deploys retain original
+source time/zone while exposing canonical UTC event time and content-derived
+evidence IDs.
+
+Local MySQL analysis snapshots persist alert, grouped-log, metric and deploy
+observations inside the same `incident-evidence/v1` envelope. The envelope
+contains the redacted observation payload and an independently checked inner
+integrity hash. Snapshot creation fails closed if evidence-graph membership
+differs from canonical revision membership or if one revision contains the
+same evidence ID with conflicting content. Local snapshots also keep an
 append-only, queryable evidence membership: unchanged content reuses the same
 immutable record and corrected content creates a version with a supersession
 link. The stored content hash is verified before revision diffing and review;

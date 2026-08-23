@@ -4,7 +4,7 @@ from clients.prometheus_client import (
 from clients.cloudwatch_client import (
     cloudwatch_metrics,
 )
-from settings import METRIC_SOURCE
+from settings import CONNECTORS_ENABLED, METRIC_SOURCE
 from utils.connector_result import (
     provenance,
     query_spec,
@@ -15,6 +15,7 @@ from utils.data_quality import (
     assess_records,
     empty_quality,
 )
+from utils.evidence import canonical_evidence
 from utils.resilience import ConnectorRequestError
 
 
@@ -96,6 +97,8 @@ def gather_metrics(state):
     )
 
     try:
+        if not CONNECTORS_ENABLED:
+            raise RuntimeError("connector kill switch is active")
         if connector is None:
             raise RuntimeError(
                 "configured metric connector is unavailable"
@@ -141,6 +144,11 @@ def gather_metrics(state):
             quarantine_invalid_timestamp=
             False,
         )
+        quality["service_attribution"] = {
+            "method": "allowlisted_query_scope",
+            "service": service,
+            "unattributed_records": 0,
+        }
         returned = sum(
             1
             for metric in metrics
@@ -184,6 +192,42 @@ def gather_metrics(state):
                 "query_id"
             ]
             metric["connector_metadata"] = provenance_data
+            evidence_payload = {
+                key: value
+                for key, value in metric.items()
+                if key not in {
+                    "connector_metadata",
+                    "event_time",
+                    "received_at",
+                    "original_timestamp",
+                    "original_timezone",
+                    "clock_quality",
+                    "timestamp_source_field",
+                    "source_query_id",
+                }
+            }
+            canonical = canonical_evidence(
+                evidence_type="metric",
+                source=source,
+                payload=evidence_payload,
+                timestamp=metric.get("original_timestamp"),
+                received_at=metric.get("received_at"),
+                service=service,
+                environment=(
+                    labels.get("environment")
+                    or labels.get("env")
+                ),
+                lineage=provenance_data,
+                collection_revision=provenance_data.get(
+                    "collection_revision", 1
+                ),
+            )
+            metric["timestamp"] = canonical["event_time"]
+            metric["event_id"] = canonical["evidence_id"]
+            metric["canonical_evidence_schema_version"] = canonical.pop(
+                "evidence_schema_version"
+            )
+            metric.update(canonical)
         return {
             "metrics": metrics,
             "source_status": {

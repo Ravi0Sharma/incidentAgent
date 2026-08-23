@@ -276,16 +276,17 @@ from deterministic evidence.
 The API should enqueue work and return. A separate continuously running worker
 should own analysis jobs.
 
-- [ ] Add a dedicated worker entry point; do not rely on the API request to
+- [x] Add a dedicated worker entry point; do not rely on the API request to
       drain a limited number of queued jobs.
-- [ ] Heartbeat or renew the job lease while a model or connector call is
+- [x] Heartbeat or renew the job lease while a model or connector call is
       active.
-- [ ] Set the lease longer than the maximum non-renewed operation, or cancel
-      before the lease expires. The current short lease is unsafe with the
-      local model's multi-minute timeout.
+- [x] Set the lease longer than the maximum non-renewed operation, or cancel
+      before the lease expires. Runtime validation keeps heartbeat below half
+      the lease and the active worker cancels rather than commits after lease
+      loss.
 - [ ] Retry only classified transient failures with backoff and jitter.
-- [ ] Move exhausted jobs to a visible dead-letter state.
-- [ ] Lock by incident so two workers cannot publish competing revisions.
+- [x] Move exhausted jobs to a visible dead-letter state.
+- [x] Lock by incident so two workers cannot publish competing revisions.
 - [ ] Prevent an older completed job from overwriting a newer incident revision
       in the UI.
 - [ ] Make every state transition idempotent.

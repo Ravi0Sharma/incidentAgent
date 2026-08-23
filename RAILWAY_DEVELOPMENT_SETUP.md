@@ -7,15 +7,18 @@ production deployment and it must not be connected to real alerts yet.
 
 Create one Railway project with:
 
-1. an application service from this repository;
-2. a Railway MySQL service;
-3. an optional Volume mounted at `/app/output` if generated HTML files should
+1. an API service from this repository;
+2. a private worker service from the same repository and revision;
+3. a Railway MySQL service shared by API and worker;
+4. an optional Volume mounted at `/app/output` if generated HTML files should
    survive a redeploy.
 
-The application uses `railway.toml`, starts
-`uvicorn webhook.api:app --host 0.0.0.0 --port $PORT`, and is healthy only when
-`/readyz` can reach MySQL. Do not expose an application URL until the review
-credentials below are present.
+The API uses `railway.toml` and starts
+`uvicorn webhook.api:app --host 0.0.0.0 --port $PORT`. Override the worker
+service start command with `python scripts/run_worker.py`; it must not have a
+public domain. `/readyz` is healthy only when MySQL is ready and the separate
+worker has a fresh durable heartbeat. Do not expose the API URL until the
+review credentials below are present.
 
 ## Required Railway variables
 
@@ -54,6 +57,12 @@ LLM_OUTPUT_USD_PER_MILLION_TOKENS=1.20
 
 PII_REDACTION_ENABLED=true
 PUBLISH_EXTERNAL=false
+API_DRAIN_JOBS=false
+JOB_LEASE_SECONDS=120
+JOB_HEARTBEAT_INTERVAL_SECONDS=30
+WORKER_POLL_INTERVAL_SECONDS=1
+WORKER_HEARTBEAT_STALE_SECONDS=15
+MAX_PENDING_JOBS=1000
 HTML_OUTPUT_DIR=/app/output
 DEFAULT_ALERT_ENVIRONMENT=development
 ```
@@ -75,11 +84,15 @@ Railway for automatic deploys, or use Railway CLI from a checked-out clone.
 
 ## Acceptance checks
 
-1. Railway healthcheck reports `/readyz` as healthy.
+1. Railway healthcheck reports `/readyz` as healthy only while the worker is
+   alive; stopping the worker changes it to 503 after the staleness window.
 2. `https://<domain>/healthz` returns `{"status":"ok"}`.
 3. A review endpoint without Basic Auth returns 401.
 4. The same endpoint with Basic Auth is accessible.
 5. A deployment restart leaves MySQL-backed incident history intact.
+6. Killing the worker during a staging probe causes takeover only after lease
+   expiry, increments the attempt once and creates exactly one analysis
+   revision.
 
 Do not set `ENVIRONMENT=shadow` or `production` for this project. Those modes
 require real OIDC, authenticated telemetry, explicit CORS, a positive model

@@ -54,6 +54,18 @@ def prometheus_text():
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def prometheus_gauges(values):
+    """Render trusted internal numeric gauges using the project namespace."""
+    lines = []
+    for name, value in sorted(values.items()):
+        safe_name = "".join(
+            char if char.isalnum() or char == "_" else "_"
+            for char in str(name)
+        )
+        lines.append(f"incident_agent_{safe_name} {float(value):g}")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 def reset_for_tests():
     with _LOCK:
         _COUNTERS.clear()

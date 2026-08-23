@@ -1,6 +1,7 @@
 from clients.github_client import (
     github
 )
+from settings import CONNECTORS_ENABLED
 from utils.connector_result import (
     provenance,
     query_spec,
@@ -11,6 +12,7 @@ from utils.data_quality import (
     assess_records,
     empty_quality,
 )
+from utils.evidence import canonical_evidence
 from utils.resilience import ConnectorRequestError
 
 
@@ -48,6 +50,8 @@ def gather_deploys(state):
     )
 
     try:
+        if not CONNECTORS_ENABLED:
+            raise RuntimeError("connector kill switch is active")
         raw_deploys = github.get_recent_deploys(
             service,
             window=state.get("incident_window")
@@ -69,6 +73,11 @@ def gather_deploys(state):
             quarantine_invalid_timestamp=
             True,
         )
+        quality["service_attribution"] = {
+            "method": "configured_deploy_environment_scope",
+            "service": service,
+            "unattributed_records": 0,
+        }
         provenance_data = provenance(
             source="deployments",
             backend=getattr(github, "repo", "mock-github"),
@@ -96,6 +105,39 @@ def gather_deploys(state):
                 "query_id"
             ]
             deploy["connector_metadata"] = provenance_data
+            evidence_payload = {
+                key: value
+                for key, value in deploy.items()
+                if key not in {
+                    "connector_metadata",
+                    "event_time",
+                    "received_at",
+                    "original_timestamp",
+                    "original_timezone",
+                    "clock_quality",
+                    "timestamp_source_field",
+                    "source_query_id",
+                }
+            }
+            canonical = canonical_evidence(
+                evidence_type="deploy",
+                source="deployments",
+                payload=evidence_payload,
+                timestamp=deploy.get("original_timestamp"),
+                received_at=deploy.get("received_at"),
+                service=service,
+                environment=deploy.get("environment"),
+                lineage=provenance_data,
+                collection_revision=provenance_data.get(
+                    "collection_revision", 1
+                ),
+            )
+            deploy["time"] = canonical["event_time"]
+            deploy["event_id"] = canonical["evidence_id"]
+            deploy["canonical_evidence_schema_version"] = canonical.pop(
+                "evidence_schema_version"
+            )
+            deploy.update(canonical)
         return {
             "deploys": deploys,
             "source_status": {

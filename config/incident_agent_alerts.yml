@@ -1,0 +1,38 @@
+groups:
+  - name: incident-agent-runtime
+    rules:
+      - alert: IncidentAgentWorkerUnavailable
+        expr: incident_agent_active_workers < 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: No live incident-agent worker heartbeat
+      - alert: IncidentAgentQueueBacklog
+        expr: incident_agent_queue_pending > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Incident analysis queue backlog is growing
+      - alert: IncidentAgentOldestJobStale
+        expr: incident_agent_queue_oldest_pending_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Oldest incident job has exceeded five minutes
+      - alert: IncidentAgentDeadLettersPresent
+        expr: incident_agent_queue_dead_letter > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: One or more incident jobs are in dead letter
+      - alert: IncidentAgentMySQLPoolSaturated
+        expr: incident_agent_mysql_pool_in_use >= incident_agent_mysql_pool_size
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Incident-agent MySQL pool is saturated

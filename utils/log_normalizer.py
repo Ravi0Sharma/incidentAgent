@@ -196,7 +196,12 @@ def normalize_log(log):
             "operation_feature":
             operation_feature,
         },
-        timestamp=record["timestamp"],
+        timestamp=(
+            log.get("original_timestamp")
+            if log.get("original_timestamp") is not None
+            else record["timestamp"]
+        ),
+        received_at=log.get("received_at"),
         service=record["labels"].get("service"),
         environment=(
             record["raw_labels"].get("environment")
@@ -237,6 +242,8 @@ def normalize_log(log):
         lineage.get(
             "source_dataset"
         ),
+        "timestamp_source_field":
+        log.get("timestamp_source_field", "timestamp"),
     }
 
 

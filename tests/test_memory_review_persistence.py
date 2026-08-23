@@ -96,6 +96,16 @@ class MemoryAndReviewPersistenceTests(unittest.TestCase):
         self.assertEqual(snapshot["evidence_ids"], ["alert-1", "log-db"])
         self.assertEqual(snapshot["candidates"][0]["rank"], 1)
         self.assertEqual(get_analysis_revision(self.incident_id, 1)["event_id"], 42)
+        stored_evidence = list_evidence_records(self.incident_id, 1)
+        self.assertTrue(all(item["integrity_valid"] for item in stored_evidence))
+        self.assertEqual(
+            stored_evidence[0]["payload"]["evidence_schema_version"],
+            "incident-evidence/v1",
+        )
+        self.assertEqual(
+            stored_evidence[0]["payload"]["classification"],
+            "confidential",
+        )
 
         decision = record_review_decision(
             self.incident_id, 3, "approved", "basic:reviewer", "evidence confirms it",
@@ -295,6 +305,13 @@ class MemoryAndReviewPersistenceTests(unittest.TestCase):
             ),
             analysis_revision=first_revision,
             latest_event_id=10,
+            run_context={"code_version": "sync-registry-build-17"},
+        )
+        self.assertEqual(
+            get_analysis_revision(self.incident_id, first_revision)["run_context"][
+                "code_version"
+            ],
+            "sync-registry-build-17",
         )
         first_pending = registry.get_pending(self.incident_id)
 

@@ -22,7 +22,8 @@ Two instrumentors are activated when enabled:
 
 import os
 
-from settings import ENVIRONMENT
+from settings import ENVIRONMENT, OTEL_EXPORTER_OTLP_ENDPOINT, SERVICE_VERSION
+from utils.egress import assert_egress_url
 
 
 _INITIALIZED = False
@@ -35,21 +36,24 @@ def init_tracing():
     if _INITIALIZED:
         return
 
-    # Phoenix instrumentation can capture complete graph state and model
-    # inputs/outputs. It is therefore a local synthetic-data tool only.
-    if ENVIRONMENT != "local":
+    local_phoenix = (
+        ENVIRONMENT == "local"
+        and os.getenv("PHOENIX_ENABLED", "false").lower() == "true"
+    )
+    endpoint = OTEL_EXPORTER_OTLP_ENDPOINT
+    if not endpoint and local_phoenix:
+        endpoint = os.getenv(
+            "PHOENIX_COLLECTOR_ENDPOINT",
+            "http://127.0.0.1:6006/v1/traces",
+        )
+    if not endpoint:
         return
+    assert_egress_url(endpoint, source="otel")
 
-    if os.getenv(
-        "PHOENIX_ENABLED",
-        "false"
-    ).lower() != "true":
-        return
-
-    if os.getenv(
-        "PHOENIX_COMPACT_TRACES",
-        "true"
-    ).lower() == "true":
+    if (
+        ENVIRONMENT != "local"
+        or os.getenv("PHOENIX_COMPACT_TRACES", "true").lower() == "true"
+    ):
         # Keep prompts and model output out of Phoenix by default. Set this to
         # false only while debugging with approved synthetic local data.
         os.environ.setdefault(
@@ -80,11 +84,6 @@ def init_tracing():
         )
         return
 
-    endpoint = os.getenv(
-        "PHOENIX_COLLECTOR_ENDPOINT",
-        "http://127.0.0.1:6006/v1/traces"
-    )
-
     project = os.getenv(
         "PHOENIX_PROJECT_NAME",
         "incident-agent"
@@ -96,6 +95,8 @@ def init_tracing():
         auto_instrument=False,
         set_global_tracer_provider=True
     )
+    os.environ.setdefault("OTEL_SERVICE_NAME", "incident-agent")
+    os.environ.setdefault("OTEL_RESOURCE_ATTRIBUTES", f"service.version={SERVICE_VERSION}")
 
     LangChainInstrumentor().instrument()
     OpenAIInstrumentor().instrument()
@@ -122,8 +123,7 @@ def init_tracing():
         pass
 
     print(
-        "[observability] Phoenix "
-        f"tracing enabled -> "
+        "[observability] OTLP tracing enabled -> "
         f"{endpoint} "
         f"(project={project})"
     )

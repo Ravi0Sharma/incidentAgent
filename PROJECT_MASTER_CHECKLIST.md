@@ -77,7 +77,7 @@ Detta är befintlig grund, inte påståenden om production readiness.
       fixture/replay-only.
 - [x] Promptbudgetkontrollen passerar; postmortem-prompten är 3 743 tecken mot
       taket 6 000.
-- [x] Senaste dokumenterade lokala regression är 284/284 tester och review-
+- [x] Senaste dokumenterade lokala regression är 291/291 tester och review-
       scenarierna är 3/3.
 
 ## Fas 0 – stäng nuvarande lokala milstolpe
@@ -114,6 +114,13 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       kontrollerad DB-manipulation blockerar approval men tillåter rejection.
       Varje revision bär också stabila innehållshashar för regler,
       normalisering, suppressions, code map, service registry och evidence pack.
+      Alla connectorrader redigeras nu före checkpointad graph-state. Alert,
+      grupperad logg, metric och deploy lagras i samma canonical envelope med
+      UTC/originaltid, lineage, klassificering och dubbla integritetskontroller.
+      Direkt HTTP/MySQL-canary för det kommande Arcvial-scope gav noll råa
+      canaryträffar och 7/7 giltiga evidensrader; se
+      `ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md`. Verkliga Arcvial-loggar måste
+      passera samma prov när paket 1–2 kopplas in.
 - [ ] **M03 – Korrelation och oberoende grounding.** Slutlig typad hypotesmodell,
       mekanism, stöd, motsägelser, entity/tid-relationer, reranking och
       fail-closed citation validation. Exit: inga okända eller rollfelaktiga
@@ -125,7 +132,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       steps. Review-sidan visar nu en begränsad, escaped diff för tillagd,
       korrigerad och borttagen evidens samt kandidatens rank/confidence/score-
       ändring. En positiv read-only-policy stoppar okända/muterande steg och
-      falska executed-action-claims; senaste 284/284 regressionstester passerar.
+      falska executed-action-claims; senaste 291/291 regressionstester passerar.
       RCA/postmortem-grounding och service-specifika rule-packbeslut återstår
       innan batchen kan stängas. Rule packs är uttryckligen parkerade tills
       faktiska tjänster, ägare och vanligaste incidenttyper är kända; generiska
@@ -141,7 +148,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       sparas utan promptinnehåll med stage, provider, modell, request-ID,
       parametrar, token usage/reservation, latens, finish-/stopporsak och kostnad.
       Budgetgränser och återstående budget visas i review; shadow/production
-      vägrar starta utan positiv USD-gräns och tokenpriser. Senaste 284/284
+      vägrar starta utan positiv USD-gräns och tokenpriser. Senaste 291/291
       tester och
       promptbudgetkontrollen passerar. Strict RCA/postmortem-output,
       kooperativ cancellation och bred prompt-injection-corpus återstår.
@@ -177,7 +184,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       failar säkert och tool/publisher/report-sinks redigerar secrets. Den
       värdesuppressande repository-scannern passerar utan att läsa `.env`;
       hash-låset ger giltig CycloneDX-SBOM och dagens `pip-audit` rapporterar
-      inga kända sårbarheter. Den låsta fullsviten passerar 284/284.
+      inga kända sårbarheter. Den låsta fullsviten passerar 291/291.
 - [ ] **M08 – Reproducerbar CI-kvalitetsgate.** Lint, typer, enhet/integration,
       coverage-trösklar, promptbudget, säkerhetsskanning och reproducerbara
       beroenden körs automatiskt. Exit: en ren checkout ger samma gröna gate.
@@ -186,8 +193,8 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       Ruff, avgränsad mypy, compileall, promptbudget, secret scan, full MySQL-
       suite, branch coverage, dependency audit och SBOM är samlade i
       `scripts/quality_gate.py` och `.github/workflows/quality.yml`. Låst lokal
-      körning är grön med 284/284 tester. Hela repositoryt mäter 74,8 procent
-      och har en 74-procentsratchet; kärnscopet mäter 82,4 procent mot grinden
+      körning är grön med 291/291 tester. Hela repositoryt mäter 74,5 procent
+      och har en 74-procentsratchet; kärnscopet mäter 82,2 procent mot grinden
       80 och säkerhetskontrollerna 97,2 procent mot grinden 90. Coverage-delen
       av `M08` är därmed stängd. En faktisk ren GitHub Actions-körning återstår
       men är medvetet parkerad i `DEFERRED_WORK_CHECKLIST.md`.
@@ -240,6 +247,12 @@ Starta denna fas när den faktiska systemmiljön och datakällorna är kända.
 - [ ] **M17 – Oberoende workers och backpressure.** Separata workers,
       heartbeats, leases, fair queueing, circuit breakers, bounded retries och
       overload-degradation. Krav: `REL-012`–`REL-014`, `PERF-009`–`PERF-011`.
+      Lokal progress: API-drain kan stängas av, en separat kontinuerlig worker
+      publicerar durable liveness, förnyar jobb- och incidentlease, dränerar på
+      signal och återtar utgångna jobb. Gemensamt kötak omfattar alert,
+      reprocess och dead-letter replay. Direkt process-/SQL-bevis finns i
+      `ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`. Multi-host staging, last,
+      fairness, circuit breakers och overload-observability återstår.
 - [ ] **M18 – Operativ observability.** End-to-end context, strukturerade
       redigerade loggar, metrics/traces, SLO-dashboard, alerts, canary och
       skyddad auditåtkomst. Krav: `OBS-003`–`OBS-008`, `OBS-010`–`OBS-012`.
@@ -262,7 +275,7 @@ Starta denna fas när den faktiska systemmiljön och datakällorna är kända.
 ## Fas 4 – releasegrindar
 
 De här grindarna bockas av genom bevis från batcherna ovan; de är inte extra
-implementationer och räknas därför inte in i de 163 primärkraven.
+implementationer och räknas därför inte in i de 162 primärkraven.
 
 - [ ] **M23 – Shadow-Ready-förkrav.** Alla P0-krav för säker read-only shadow,
       review, data, drift och eval har ägare och bevis.
@@ -293,11 +306,11 @@ acceptanskriterier finns bara i `PRODUCTION_READINESS.md`.
 | 9 Security/privacy | 4 | 14 | `SEC-005`–`SEC-018` |
 | 10 Reliability/recovery | 2 | 15 | `REL-003`–`REL-017` |
 | 11 Observability/audit | 2 | 10 | `OBS-003`–`OBS-012` |
-| 12 Tests/evaluation | 3 | 17 | `TST-004`–`TST-020` |
+| 12 Tests/evaluation | 4 | 16 | `TST-004`, `TST-006`–`TST-020` |
 | 13 Performance/cost | 4 | 8 | `PERF-004`–`PERF-006`, `PERF-008`–`PERF-012` |
 | 14 Deploy/operations | 3 | 11 | `DEP-003`–`DEP-010`, `DEP-012`–`DEP-014` |
 | 15 Docs/governance | 1 | 9 | `DOC-002`–`DOC-010` |
-| **Totalt** | **69** | **163** | **232 primärkrav** |
+| **Totalt** | **70** | **162** | **232 primärkrav** |
 
 ## Nästa konkreta arbetsordning
 

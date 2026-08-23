@@ -1,0 +1,53 @@
+{
+  "title": "Incident Agent Shadow Runtime",
+  "uid": "incident-agent-shadow",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active workers",
+      "type": "stat",
+      "targets": [{"expr": "incident_agent_active_workers"}]
+    },
+    {
+      "id": 2,
+      "title": "Queue by state",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "incident_agent_queue_pending", "legendFormat": "pending"},
+        {"expr": "incident_agent_queue_leased", "legendFormat": "leased"},
+        {"expr": "incident_agent_queue_dead_letter", "legendFormat": "dead letter"}
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Oldest pending job (seconds)",
+      "type": "timeseries",
+      "targets": [{"expr": "incident_agent_queue_oldest_pending_seconds"}]
+    },
+    {
+      "id": 4,
+      "title": "MySQL pool",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "incident_agent_mysql_pool_in_use", "legendFormat": "in use"},
+        {"expr": "incident_agent_mysql_pool_available", "legendFormat": "available"}
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Job outcomes",
+      "type": "timeseries",
+      "targets": [{"expr": "rate(incident_agent_jobs_total[5m])", "legendFormat": "{{outcome}}"}]
+    },
+    {
+      "id": 6,
+      "title": "Rejected intake",
+      "type": "timeseries",
+      "targets": [{"expr": "rate(incident_agent_alerts_total{outcome=~\".*rejected|queue_capacity_rejected|intake_disabled|tenant_mismatch\"}[5m])"}]
+    }
+  ]
+}

@@ -12,6 +12,10 @@ __pycache__
 .phoenix_data
 data/external
 output
+tests
+htmlcov
+.github
+*.md
 mysql_sim.log
 *.pyc
 .DS_Store

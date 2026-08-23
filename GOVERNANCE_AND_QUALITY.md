@@ -13,7 +13,7 @@ fixture/replay-only POC closure and not a Shadow or production release. The
 documented unit suite requires the repository virtual environment and a
 disposable MySQL instance; do not describe a historical pass count as a current
 verification result without its dated command output. On 2026-08-09 the
-hash-synchronized environment passed 284/284 tests, lint, scoped types,
+hash-synchronized environment passed 291/291 tests, lint, scoped types,
 compileall, prompt budgets, secret scan, `pip check`, dependency audit and SBOM
 generation. Branch coverage was 74.8% repository-wide against a 74% ratchet,
 82.4% for core workflow code against the 80% gate and 97.2% for security/control

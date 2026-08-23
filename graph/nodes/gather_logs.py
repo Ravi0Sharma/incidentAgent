@@ -3,7 +3,7 @@ from clients.cloudwatch_client import (
     cloudwatch_logs,
 )
 
-from settings import LOG_QUERY_LIMIT, LOG_SOURCE
+from settings import CONNECTORS_ENABLED, LOG_QUERY_LIMIT, LOG_SOURCE
 from utils.connector_result import (
     provenance,
     query_spec,
@@ -104,6 +104,8 @@ def gather_logs(state):
     )
 
     try:
+        if not CONNECTORS_ENABLED:
+            raise RuntimeError("connector kill switch is active")
         if connector is None:
             raise RuntimeError(
                 "configured log connector is unavailable"
@@ -169,6 +171,11 @@ def gather_logs(state):
             quarantine_invalid_timestamp=
             True,
         )
+        quality["service_attribution"] = {
+            "method": "allowlisted_query_scope",
+            "service": service,
+            "unattributed_records": 0,
+        }
         total_count = stats.get(
             "total_count"
         )

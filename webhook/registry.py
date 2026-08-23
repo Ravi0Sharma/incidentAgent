@@ -3,10 +3,9 @@
 import json
 from datetime import datetime, timezone
 
-import pymysql
-
-from settings import MYSQL_DATABASE, MYSQL_HOST, MYSQL_PASSWORD, MYSQL_PORT, MYSQL_USER
 from webhook.lifecycle import LIFECYCLE_VERSION, validate_transition
+from utils.mysql import connection as mysql_connection
+from settings import RUNTIME_SCHEMA_DDL_ENABLED
 from utils.redaction import redact_data
 
 
@@ -15,15 +14,7 @@ class RevisionConflictError(ValueError):
 
 
 def _connection():
-    return pymysql.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        charset="utf8mb4",
-        autocommit=False,
-    )
+    return mysql_connection()
 
 
 def _now():
@@ -37,6 +28,8 @@ def _decode(value):
 
 
 def ensure_schema():
+    if not RUNTIME_SCHEMA_DDL_ENABLED:
+        return
     with _connection() as conn, conn.cursor() as cur:
         cur.execute(
             "CREATE TABLE IF NOT EXISTS pending_reviews ("

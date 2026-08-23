@@ -17,6 +17,14 @@ The prioritized hardening sequence and Railway migration gates live in
 The dated blind OpenAI portfolio, full pre-review E2E evidence, token usage and
 Railway cost-control finding live in
 [`OPENAI_LIVE_EVALUATION_2026-08-09.md`](OPENAI_LIVE_EVALUATION_2026-08-09.md).
+The current verified local runtime result and production-shadow go/no-go are in
+[`SHADOW_READINESS_AUDIT_2026-08-14.md`](SHADOW_READINESS_AUDIT_2026-08-14.md).
+The local canonical-evidence completion and required real-log revalidation for
+the Arcvial shadow scope are in
+[`ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md`](ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md).
+The independent API/worker boundary, leases, heartbeats, backpressure and
+direct crash-recovery evidence are in
+[`ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`](ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md).
 The verified LogHub 2.0 intake, full raw-format audit, and parser findings live
 in [`LOGHUB_2_EVALUATION_2026-08-09.md`](LOGHUB_2_EVALUATION_2026-08-09.md).
 The bounded local-POC closure plan, explicit production deferrals, and

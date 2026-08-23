@@ -5,24 +5,15 @@ import math
 import time
 from collections import defaultdict, deque
 
-import pymysql
-
-from settings import MYSQL_DATABASE, MYSQL_HOST, MYSQL_PASSWORD, MYSQL_PORT, MYSQL_USER
+from utils.mysql import connection as mysql_connection
+from settings import RUNTIME_SCHEMA_DDL_ENABLED
 
 
 _TEST_WINDOWS: defaultdict[str, deque[float]] = defaultdict(deque)
 
 
 def _connection():
-    return pymysql.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        charset="utf8mb4",
-        autocommit=False,
-    )
+    return mysql_connection()
 
 
 def _test_allow(key, limit, window_seconds, current):
@@ -43,11 +34,12 @@ def allow(key, limit, window_seconds, now=None):
     window_id = math.floor(current / window_seconds)
     key_hash = hashlib.sha256(str(key).encode("utf-8")).hexdigest()
     with _connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS webhook_rate_limits ("
-            "key_hash CHAR(64) NOT NULL, window_id BIGINT NOT NULL, request_count INT NOT NULL, "
-            "PRIMARY KEY (key_hash,window_id))"
-        )
+        if RUNTIME_SCHEMA_DDL_ENABLED:
+            cur.execute(
+                "CREATE TABLE IF NOT EXISTS webhook_rate_limits ("
+                "key_hash CHAR(64) NOT NULL, window_id BIGINT NOT NULL, request_count INT NOT NULL, "
+                "PRIMARY KEY (key_hash,window_id))"
+            )
         cur.execute("DELETE FROM webhook_rate_limits WHERE window_id < %s", (window_id - 1,))
         cur.execute(
             "SELECT request_count FROM webhook_rate_limits WHERE key_hash=%s AND window_id=%s FOR UPDATE",

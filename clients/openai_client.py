@@ -19,8 +19,10 @@ from utils.model_usage import (
     remaining_deadline_seconds,
     usage_entry,
 )
+from utils.egress import assert_egress_url
 
 
+assert_egress_url(OPENAI_BASE_URL, source="openai")
 client = OpenAI(
     base_url=OPENAI_BASE_URL,
     api_key=OPENAI_API_KEY,

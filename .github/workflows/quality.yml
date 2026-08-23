@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   local-safe-gate:
     runs-on: ubuntu-latest
@@ -43,6 +50,8 @@ jobs:
           python -m pip install --require-hashes -r requirements.lock
       - name: Run deterministic quality gate
         run: python scripts/quality_gate.py
+      - name: Validate deploy artifacts
+        run: python scripts/validate_deploy_artifacts.py
       - name: Generate CycloneDX SBOM
         run: cyclonedx-py environment --output-format JSON --output-file sbom.json
       - name: Audit locked dependencies
@@ -53,3 +62,17 @@ jobs:
           path: |
             .coverage
             sbom.json
+
+  container-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: incident-agent:${{ github.sha }}
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}

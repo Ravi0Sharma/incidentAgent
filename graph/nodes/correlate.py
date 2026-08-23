@@ -77,11 +77,32 @@ def _source_lineage(event):
                 ]
             )
         )
+    sources = set(
+        lineage.get("sources", [])
+        or []
+    )
+    for value in (
+        event.get("source"),
+        metadata.get("source"),
+    ):
+        if value:
+            sources.add(str(value))
+    connector_versions = set(
+        lineage.get("connector_versions", [])
+        or []
+    )
+    if metadata.get("connector_version"):
+        connector_versions.add(
+            str(metadata["connector_version"])
+        )
     return {
+        "sources": sorted(sources),
         "source_query_ids":
         sorted(query_ids),
         "source_schema_ids":
         sorted(schema_ids),
+        "connector_versions":
+        sorted(connector_versions),
     }
 
 

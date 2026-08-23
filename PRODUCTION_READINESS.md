@@ -42,7 +42,7 @@ claim. The suite ran against the configured local MySQL test database.
 
 Current local baseline:
 
-- `.venv/bin/python scripts/quality_gate.py`: 284/284 test methods
+- `.venv/bin/python scripts/quality_gate.py`: 291/291 test methods
   passed, including MySQL lifecycle/persistence, security/observability, API,
   evidence, hypothesis, connector-policy, CloudWatch adapter, Hadoop, HDFS_v1,
   OpenStack, signal-retention and adversarial-boundary coverage. The same run
