@@ -36,3 +36,17 @@ groups:
           severity: warning
         annotations:
           summary: Incident-agent MySQL pool is saturated
+      - alert: IncidentAgentPublicationUncertain
+        expr: incident_agent_publication_uncertain > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: External publication requires manual provider reconciliation
+      - alert: IncidentAgentPublicationAttemptStale
+        expr: incident_agent_publication_oldest_started_seconds > 300
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: External publication attempt has no terminal state

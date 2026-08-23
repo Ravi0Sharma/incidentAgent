@@ -48,6 +48,16 @@
       "title": "Rejected intake",
       "type": "timeseries",
       "targets": [{"expr": "rate(incident_agent_alerts_total{outcome=~\".*rejected|queue_capacity_rejected|intake_disabled|tenant_mismatch\"}[5m])"}]
+    },
+    {
+      "id": 7,
+      "title": "External publication guard",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "incident_agent_publication_started", "legendFormat": "started"},
+        {"expr": "incident_agent_publication_uncertain", "legendFormat": "uncertain"},
+        {"expr": "incident_agent_publication_oldest_started_seconds", "legendFormat": "oldest started seconds"}
+      ]
     }
   ]
 }

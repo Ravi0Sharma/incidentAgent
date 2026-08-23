@@ -11,7 +11,7 @@
 | Loki | Log samples, counts, targeted search, service discovery | Time window, query/sample limits, versioned query provenance and record-quality accounting | Real-backend contract suite and pagination |
 | Prometheus | Error rate, p95 latency, request rate | Incident window, fixed metric set, versioned query provenance and freshness accounting | Real-backend contract suite and baseline/seasonality |
 | GitHub | Recent deployment-like records | Lookback window and result cap | Must prove records are actual production deploys, not only repository metadata |
-| Slack | Publish postmortem notification | Request policy only | Publishing approval/outbox/idempotency remains outside Area 3 |
+| Slack | Publish a separately approved postmortem notification | Final publish interrupt, durable at-most-once attempt guard and fail-closed uncertain state | Real workspace contract and operator reconciliation rehearsal |
 | CloudWatch Logs Insights | Allowlisted service log groups with a fixed, bounded query | Max 50 groups, fixed result cap, bounded polling, explicit terminal failures | Real AWS sandbox, IAM scope and representative log-shape contract |
 | CloudWatch GetMetricData | Allowlisted namespaces, names, statistics and dimensions | Max 500 configured queries, bounded pagination and partial-data marking | Real AWS sandbox, IAM scope, freshness and metric semantic validation |
 

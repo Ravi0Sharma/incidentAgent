@@ -27,9 +27,21 @@ the authoritative acceptance list.
 
 ## Audit Snapshot
 
-**Audit date:** 2026-08-09
+**Audit date:** 2026-08-24
 
-**Current maturity:** functional local prototype; not production-ready.
+**Current maturity:** locally production-hardened candidate; not approved for
+external production traffic until environment-specific staging gates pass.
+
+**Hardening update (2026-08-24):** MySQL checkpoints now use database-direct
+sync and async paths with immutable conflict detection. Real exec-process tests
+exercise concurrent workers, per-incident serialization, unique worker
+identities, durable results, SIGKILL lease recovery and job-keyed idempotent
+revisions. CI repeats load/race probes, logical backup/isolated restore with
+readable canaries, migration checks, SBOM/dependency audit and CodeQL. A second
+exact-draft interrupt now precedes external publishing, which uses a durable
+at-most-once attempt guard and blocks ambiguous retries. Managed-environment
+failover, real provider contracts, per-destination publication recovery and
+long-duration SLO evidence remain open.
 
 **Planning update (2026-07-22):** the active finish line is now
 [`Local-Safe v0.1`](SAFE_COMPLETION_PLAN.md), not Shadow-Ready. It permits
@@ -42,13 +54,13 @@ claim. The suite ran against the configured local MySQL test database.
 
 Current local baseline:
 
-- `.venv/bin/python scripts/quality_gate.py`: 291/291 test methods
+- `python scripts/quality_gate.py`: 334/334 test methods
   passed, including MySQL lifecycle/persistence, security/observability, API,
   evidence, hypothesis, connector-policy, CloudWatch adapter, Hadoop, HDFS_v1,
   OpenStack, signal-retention and adversarial-boundary coverage. The same run
   passed Ruff, scoped mypy, compileall, prompt budgets and the repository
-  secret scan. Branch coverage measured 74.8% repository-wide, 82.4% for the
-  explicit core scope and 97.2% for the explicit security-control scope.
+  secret scan. Branch coverage measured 74.5% repository-wide, 82.2% for the
+  explicit core scope and 95.8% for the explicit security-control scope.
 - The default local workflow supports alert ingestion, bounded collection,
   normalization, grouping, detection, ranking, semantic interpretation,
   human review, RCA, postmortem drafting, and local HTML output.
@@ -111,19 +123,22 @@ The most important production blockers are:
 1. Targeted tool samples can be reprocessed and rescored locally, but connector
    observations are not yet appended as durable canonical evidence revisions
    through a complete multi-round investigation loop.
-2. The current in-process worker launch has no independent deployment,
-   backup, or disaster-recovery model despite MySQL queueing and locking.
+2. Independent workers, local multi-process recovery, migrations and logical
+   restore drills exist; managed multi-host failover, scheduled encrypted
+   backups and measured production RPO/RTO remain unverified.
 3. There is no curated cross-incident knowledge memory with provenance,
    approval, retention, deletion, and retrieval evaluation.
-4. Authentication, authorization, audit history, encryption, retention, replay
-   protection, and full-payload redaction are incomplete.
-5. Approving a hypothesis can immediately generate and externally publish a
-   new postmortem. The generated document itself has no final approval gate.
+4. OIDC/RBAC, CSRF, replay protection and redaction controls exist locally;
+   real identity registration, immutable audit storage, encryption ownership,
+   retention/deletion and penetration evidence remain incomplete.
+5. Separate draft publication approval and an aggregate at-most-once attempt
+   guard exist. Provider-specific idempotency and safe retry of only a failed
+   destination remain incomplete.
 6. Pre-review LLM/tool calls now share an incident deadline and
    provider-reported usage ledger, but initial connectors still lack cooperative
    mid-request cancellation and the cost estimate is not reconciled to billing.
    Strict structured output across every generation stage also remains open.
-7. The 249 local tests and public-dataset loops provide a stronger contract,
+7. The local tests and public-dataset loops provide a stronger contract,
    MySQL, grounding and data-retention baseline, but there is still no
    SRE-adjudicated production gold set or sufficient E2E, load, adversarial,
    concurrency and controlled fault-injection evidence for production quality
@@ -737,15 +752,19 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](HYPOTHESIS_CONTRACT.md).
   retry is recognized as idempotent; a competing payload is rejected before the
   graph resumes. Organization-wide multi-instance/load evidence remains open
   under `REV-009`.
-- [ ] `REV-010` `P0` Add a separate `awaiting_publish_review` gate after the
+- [x] `REV-010` `P0` Add a separate `awaiting_publish_review` gate after the
   postmortem draft is generated and edited. Only approval of that exact draft
   version may enable external publication.
-- [ ] `REV-011` `P0` Never publish automatically merely because analysis
+- [x] `REV-011` `P0` Never publish automatically merely because analysis
   Hypothesis 1/2/3 was approved. Analysis approval and document-publication
   approval are separate permissions and audit events.
 - [ ] `REV-012` `P0` Make external publishing idempotent with an outbox and
   destination idempotency key. Retries cannot create duplicate Slack messages
   or GitHub issues.
+- [x] `REV-012a` A durable publication key prevents a completed attempt from
+  running twice and blocks automatic retry when delivery is uncertain. Full
+  per-destination idempotency/reconciliation remains open under `REV-012` and
+  `REV-013`.
 - [ ] `REV-013` `P0` Handle partial publication failure. The UI shows each
   destination status and operators can retry only failed destinations safely.
 - [ ] `REV-014` `P1` Let reviewers edit or annotate the draft while preserving
@@ -982,8 +1001,10 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](HYPOTHESIS_CONTRACT.md).
   duplicate jobs, concurrent workers, concurrent reviewers, and publication
   retries.
 - [x] `TST-009a` MySQL integration tests cover duplicate events, stale writers,
-  worker leases and review-decision idempotency; true multi-process and publish
-  retry scenarios remain open.
+  worker leases and review-decision idempotency. Exec-process tests now cover
+  shared checkpoints, concurrent workers, SIGKILL recovery, unique job effects
+  and completed/uncertain publication retry guards. Real-provider partial
+  delivery remains open.
 - [ ] `TST-010` `P0` Add redaction and data-leak tests for nested annotations,
   logs, labels, URLs, exceptions, tool results, feedback, memory, traces, and
   generated output.

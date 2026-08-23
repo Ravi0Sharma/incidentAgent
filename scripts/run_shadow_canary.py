@@ -69,6 +69,7 @@ def main():
     parser.add_argument("--environment", default="shadow")
     parser.add_argument("--tenant", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=180)
+    parser.add_argument("--expected-min-workers", type=int, default=2)
     parser.add_argument("--local", action="store_true")
     args = parser.parse_args()
     if not args.base_url.startswith("https://") and os.getenv("ENVIRONMENT") != "local":
@@ -78,6 +79,19 @@ def main():
     body = json.dumps(_payload(args.service, args.environment, args.tenant), separators=(",", ":")).encode()
 
     with httpx.Client(timeout=15) as client:
+        readiness = client.get(args.base_url.rstrip("/") + "/readyz")
+        readiness.raise_for_status()
+        ready_payload = readiness.json()
+        active_workers = int(
+            ready_payload.get("dependencies", {})
+            .get("worker", {})
+            .get("active_workers", 0)
+        )
+        if active_workers < args.expected_min_workers:
+            raise RuntimeError(
+                "shadow canary requires at least "
+                f"{args.expected_min_workers} active workers; observed {active_workers}"
+            )
         first = client.post(
             args.base_url.rstrip("/") + "/v1/alerts",
             content=body,
@@ -111,7 +125,7 @@ def main():
     if not status or status["status"] != "completed":
         raise RuntimeError(f"canary did not complete: {status}")
     if status["attempt_count"] != 1 or status["analysis_revisions"] < 1:
-        raise RuntimeError(f"canary completion was not exactly-once: {status}")
+        raise RuntimeError(f"canary did not complete in one controlled attempt: {status}")
     print(
         json.dumps(
             {
@@ -119,6 +133,7 @@ def main():
                 "incident_id": accepted["incident_id"],
                 "job_id": accepted["job_id"],
                 "duplicate_status": duplicate_result["status"],
+                "active_workers": active_workers,
                 "job_status": status,
             },
             indent=2,

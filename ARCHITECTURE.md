@@ -11,8 +11,9 @@ Alertmanager/CloudWatch adapter (untrusted)
      -> bounded OpenAI-compatible semantic/interpretation stages
      -> human review interrupt
      -> RCA + postmortem draft
-     -> reviewer revision gate
-     -> local HTML draft (external publishing disabled by default)
+     -> separate exact-draft publication review interrupt
+     -> durable publication-attempt guard
+     -> local HTML draft / explicitly approved external publishers
 ```
 
 Trust boundaries are the webhook, each configured source connector, the model
@@ -26,10 +27,11 @@ Local development may still drain jobs from the API when `API_DRAIN_JOBS=true`.
 Shadow and production reject that setting and require the independent
 `scripts/run_worker.py` process. Durable worker heartbeats, renewable job and
 incident leases, retry/dead-letter state and bounded queue admission are stored
-in MySQL. The remaining production target adds versioned migrations,
-connection pooling, object storage, validated multi-host behavior, immutable
-audit records and outbox-based external writes. No automatic remediation
-exists in either architecture.
+in MySQL. Versioned migrations, connection pooling and validated local
+multi-process behavior are implemented. The remaining target adds object
+storage, managed multi-host validation, immutable audit storage and
+per-destination publication reconciliation. No automatic remediation exists
+in either architecture.
 
 ## Decisions awaiting ADRs
 

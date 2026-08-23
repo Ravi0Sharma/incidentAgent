@@ -18,6 +18,12 @@ DDL grants. Do not run a destructive database downgrade during an incident:
 roll back application code first, then use a tested backup/restore procedure
 if a schema reversal is unavoidable.
 
+The current migrations are additive: nullable job/revision fields and the
+publication-attempt table. The rollback plan is therefore to stop intake,
+deploy the previous API/worker image, leave the newer schema in place, and
+verify `/readyz`. Do not delete columns or migration-ledger rows. A future
+contracting migration requires its own compatibility release and restore point.
+
 ## Backup and restore rehearsal
 
 Rehearse recovery against a new, isolated MySQL database before every material
@@ -31,6 +37,19 @@ and access-controlled, record its source timestamp and MySQL version, and
 delete the isolated restore database after the rehearsal. A code rollback is
 the first response to a bad migration; use the tested restore procedure only
 when data recovery is required.
+
+Generate local recovery evidence with:
+
+```
+python scripts/check_pitr_readiness.py --minimum-retention-seconds 86400
+python scripts/verify_backup_restore.py
+```
+
+The restore verifier adds temporary canary data, creates a consistent dump,
+restores it under a generated database name, verifies migrations, and reads
+both an event and a checkpoint. It removes the restore database, dump and
+source canaries after the rehearsal. Production must run the equivalent job
+with managed backup credentials and retain the machine-readable report.
 
 ## Queue backlog or stuck job
 
@@ -55,6 +74,38 @@ For a release rehearsal, deliberately kill one worker while it holds a short
 lease, wait for expiry, and confirm exactly one replacement worker reclaims
 and completes that job. Preserve the job id and attempt count as evidence; do
 not use a production incident as the test case.
+
+Run the real process boundary and repeated race probes with:
+
+```
+python scripts/verify_distributed_runtime.py --jobs 64 --workers 4
+python scripts/run_resilience_soak.py --cycles 5 --jobs-per-cycle 50 --workers 4
+```
+
+Start the production topology locally without Docker with:
+
+```
+python scripts/start_local_cluster.py --workers 2
+```
+
+In the deployed shadow/production environment, run
+`python scripts/production_preflight.py` before opening ingress. It fails unless
+secure configuration, the current schema, PITR prerequisites and the configured
+minimum worker replica count all pass together.
+
+Jobs use at-least-once delivery. Database revisions are keyed by job id, so a
+crash/reclaim does not duplicate that durable effect. External providers must
+still be handled according to their own idempotency contracts.
+
+## Uncertain external publication
+
+External publishing requires a separate final-draft approval. Before calling
+providers, the application commits a unique publication attempt. Completed
+attempts are deduplicated. If a process or provider fails after an
+acknowledgement may have occurred, the attempt becomes `uncertain` and
+automatic retry is blocked. Reconcile Slack and GitHub manually and preserve
+the audit trail. Per-destination retry remains future work;
+`PUBLISH_EXTERNAL=false` is the safe kill switch.
 
 ## Model or source outage
 

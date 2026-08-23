@@ -61,6 +61,18 @@ jobs:
           python scripts/migrate_database.py check
       - name: Run deterministic quality gate
         run: python scripts/quality_gate.py
+      - name: Exercise four worker processes under load and SIGKILL
+        run: python scripts/verify_distributed_runtime.py --jobs 64 --workers 4 | tee distributed-runtime.json
+      - name: Repeat distributed race probe
+        run: python scripts/run_resilience_soak.py --cycles 2 --jobs-per-cycle 40 --workers 4 | tee resilience-soak.json
+      - name: Install MySQL backup client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mysql-client
+      - name: Rehearse logical backup and isolated restore
+        env:
+          PROCESS_ROLE: migrator
+        run: python scripts/verify_backup_restore.py | tee backup-restore.json
       - name: Validate deploy artifacts
         run: python scripts/validate_deploy_artifacts.py
       - name: Generate CycloneDX SBOM
@@ -73,6 +85,9 @@ jobs:
           path: |
             .coverage
             sbom.json
+            distributed-runtime.json
+            resilience-soak.json
+            backup-restore.json
 
   container-build:
     runs-on: ubuntu-latest

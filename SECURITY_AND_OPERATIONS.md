@@ -21,9 +21,10 @@ an OpenAI provider is enabled.
 baseline and verifies MySQL plus the queue schema and, when API drain is off,
 a fresh durable heartbeat from an independent worker: webhook/reviewer
 OIDC configuration, separate session/CSRF secrets, non-default redaction salt,
-explicit CORS origins, HTTPS model
-endpoint, a non-local checkpointer, and no external publishing. Unsafe
-combinations return not-ready. Local development may use Basic Auth; shadow and
+explicit CORS origins, an HTTPS model endpoint and a MySQL checkpointer. Shadow
+forbids external publishing; production publishing additionally requires
+configured allowlisted providers and the separate final-review interrupt.
+Unsafe combinations return not-ready. Local development may use Basic Auth; shadow and
 production require OIDC authorization-code login or a validated Bearer token.
 Signed secure sessions expose only issuer, subject, expiry and roles. Viewer,
 decision and operator roles are configured separately, and review mutations
@@ -48,14 +49,15 @@ multi-worker dashboards and alerts.
 The OIDC/RBAC/CSRF boundary is implemented locally but still requires a real
 identity-provider registration and staging security test. Hash-locked Python
 dependencies, repository secret scanning, dependency audit and CycloneDX SBOM
-generation now run in the local/CI quality definition. The durable MySQL queue,
-renewable job/incident leases, worker heartbeat, bounded admission and
-dead-letter path are implemented locally. The following are not implemented:
-versioned least-privilege migrations, connection pooling, at-rest key
-management, network egress allowlisting, approved secret manager and rotation,
-container image scanning, durable publication outbox, backups/restore drill,
-dashboards, alert routing and canary delivery. They remain explicit blockers
-in `SEC-*`, `REL-*`, `OBS-*` and `DEP-*` checklist items.
+generation and CodeQL now run in CI. The durable MySQL queue, renewable
+job/incident leases, worker heartbeat, bounded admission, dead-letter path,
+role-aware pooling, versioned migrations, egress allowlisting and repeatable
+backup/restore drill are implemented locally. Publication requires separate
+exact-draft approval and a durable at-most-once attempt guard; ambiguous
+provider delivery fails closed for operator reconciliation. Managed at-rest
+keys, real secret-manager injection/rotation, image scanning, immutable audit
+storage, per-destination partial-failure recovery, production dashboards/alert
+routing and a real staging canary remain environment-specific blockers.
 
 Threat-model coverage and proof are defined by `A09-T01`–`A09-T12`, recovery by
 `A10-T01`–`A10-T12`, and observability by `A11-T01`–`A11-T10`.
