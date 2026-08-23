@@ -29,6 +29,37 @@ INITIAL_MIGRATION = "20260823_01_initial_runtime_schema"
 MIGRATION_LOCK_NAME = "incident-agent-schema-migration"
 
 
+def _expected_tables():
+    prefix = settings.MYSQL_TABLE
+    return {
+        "schema_migrations",
+        "incident_events",
+        "incident_id_sequence",
+        "incident_id_map",
+        "incident_revisions",
+        "incident_revision_heads",
+        "incident_analysis_revisions",
+        "incident_evidence_records",
+        "incident_analysis_evidence",
+        "incident_review_decisions",
+        "incident_postmortem_drafts",
+        "incident_jobs",
+        "incident_job_locks",
+        "incident_queue_control",
+        "incident_workers",
+        "incident_dead_letters",
+        "pending_reviews",
+        "incident_lifecycle",
+        "curated_knowledge",
+        "webhook_rate_limits",
+        "webhook_nonces",
+        "audit_events",
+        prefix,
+        f"{prefix}_writes",
+        f"{prefix}_blobs",
+    }
+
+
 def _validate_invocation():
     if settings.PROCESS_ROLE != "migrator":
         raise RuntimeError("PROCESS_ROLE=migrator is required for database migrations")
@@ -62,6 +93,19 @@ def _is_applied(conn, migration_id):
         return bool(cur.fetchone())
 
 
+def _missing_runtime_tables(conn):
+    expected = _expected_tables()
+    placeholders = ",".join("%s" for _ in expected)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT table_name FROM information_schema.tables "
+            f"WHERE table_schema=%s AND table_name IN ({placeholders})",
+            (settings.MYSQL_DATABASE, *sorted(expected)),
+        )
+        actual = {row[0] for row in cur.fetchall()}
+    return sorted(expected - actual)
+
+
 def _apply_initial_schema():
     incident_store.ensure_schema(allow_ddl=True)
     registry.ensure_schema(allow_ddl=True)
@@ -85,6 +129,12 @@ def apply_migrations():
         try:
             _ensure_ledger(conn)
             if _is_applied(conn, INITIAL_MIGRATION):
+                missing = _missing_runtime_tables(conn)
+                if missing:
+                    raise RuntimeError(
+                        "migration ledger exists but runtime schema is incomplete: "
+                        + ", ".join(missing)
+                    )
                 return {"applied": [], "already_applied": [INITIAL_MIGRATION]}
             _apply_initial_schema()
             cur.execute(
@@ -93,6 +143,12 @@ def apply_migrations():
                 (INITIAL_MIGRATION, settings.PROCESS_ROLE),
             )
             conn.commit()
+            missing = _missing_runtime_tables(conn)
+            if missing:
+                raise RuntimeError(
+                    "migration did not create required runtime tables: "
+                    + ", ".join(missing)
+                )
             return {"applied": [INITIAL_MIGRATION], "already_applied": []}
         finally:
             cur.execute("SELECT RELEASE_LOCK(%s)", (MIGRATION_LOCK_NAME,))
@@ -106,6 +162,12 @@ def check_migrations():
         _ensure_ledger(conn)
         if not _is_applied(conn, INITIAL_MIGRATION):
             raise RuntimeError(f"missing required database migration: {INITIAL_MIGRATION}")
+        missing = _missing_runtime_tables(conn)
+        if missing:
+            raise RuntimeError(
+                "migration ledger exists but runtime schema is incomplete: "
+                + ", ".join(missing)
+            )
     return {"applied": [INITIAL_MIGRATION]}
 
 

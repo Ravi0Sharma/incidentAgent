@@ -44,6 +44,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             patch.object(migrate_database, "_ensure_ledger"),
             patch.object(migrate_database, "_is_applied", return_value=False),
             patch.object(migrate_database, "_apply_initial_schema") as apply_schema,
+            patch.object(migrate_database, "_missing_runtime_tables", return_value=[]),
         ):
             result = migrate_database.apply_migrations()
 
@@ -68,8 +69,27 @@ class DatabaseMigrationTests(unittest.TestCase):
             patch.object(migrate_database, "_ensure_ledger"),
             patch.object(migrate_database, "_is_applied", return_value=True),
             patch.object(migrate_database, "_apply_initial_schema") as apply_schema,
+            patch.object(migrate_database, "_missing_runtime_tables", return_value=[]),
         ):
             result = migrate_database.apply_migrations()
 
         self.assertEqual(result["already_applied"], [migrate_database.INITIAL_MIGRATION])
         apply_schema.assert_not_called()
+
+    def test_check_rejects_a_partial_schema_even_with_a_migration_ledger(self):
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        connection.__exit__.return_value = False
+        with (
+            patch.object(migrate_database, "_validate_invocation"),
+            patch.object(migrate_database, "mysql_connection", return_value=connection),
+            patch.object(migrate_database, "_ensure_ledger"),
+            patch.object(migrate_database, "_is_applied", return_value=True),
+            patch.object(
+                migrate_database,
+                "_missing_runtime_tables",
+                return_value=["incident_jobs"],
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "runtime schema is incomplete"):
+                migrate_database.check_migrations()

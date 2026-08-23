@@ -200,6 +200,8 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
         recovered = claim_next_job("worker-b", lease_seconds=120)
         self.assertEqual(recovered["job_id"], first["job_id"])
         self.assertEqual(recovered["attempt_count"], 2)
+        with self.assertRaisesRegex(ValueError, "job lease is not owned"):
+            complete_job(first["job_id"], "worker-a")
         complete_job(recovered["job_id"], "worker-b")
 
         next_job = claim_next_job("worker-b", lease_seconds=120)

@@ -314,6 +314,12 @@ remains an open release gate.
 Acceptance criterion: killing and restarting API or worker processes during an
 incident neither loses work nor produces duplicate final revisions.
 
+Current evidence (2026-08-23): CI runs the MySQL lifecycle suite after the
+release migration. It verifies that an expired worker lease is reclaimed and
+that the prior worker can no longer complete that job. A full process-kill
+rehearsal against a production-equivalent MySQL backup remains required before
+the external-data shadow gate can close.
+
 ## Priority 2: review, security, and safe publication
 
 - [ ] Enforce approval policy on the server, not only in the UI.
@@ -396,12 +402,17 @@ Important Railway behavior and configuration references:
 
 Before the first hosted deployment:
 
-- [ ] Build and tests run in CI from a pinned lockfile/runtime version.
+- [x] Build and tests run in CI from a pinned lockfile/runtime version.
 - [ ] Database migrations have a tested forward and rollback procedure.
-- [ ] API and worker have separate commands and structured logs.
+- [x] API and worker have separate commands and structured logs.
 - [x] Startup configuration fails closed for the selected environment.
 - [x] `/healthz` and `/readyz` are fast and do not modify the database.
 - [ ] No raw model input/output tracing is enabled.
+
+Current evidence (2026-08-23): the GitHub quality workflow installs
+`requirements.lock` under the version pinned in `.python-version`, applies and
+checks the MySQL schema as `PROCESS_ROLE=migrator`, then runs the quality gate
+with runtime DDL disabled. API and worker have distinct process entrypoints.
 
 Before connecting real production observability data:
 
