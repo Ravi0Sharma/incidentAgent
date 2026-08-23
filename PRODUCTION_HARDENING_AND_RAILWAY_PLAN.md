@@ -301,8 +301,15 @@ should own analysis jobs.
       version, and policy version required for reproducible reprocessing.
 - [ ] Never select an arbitrary latest event, such as reviewer feedback, as the
       original alert during reprocessing.
-- [ ] Run database migrations once as a release step; the runtime database role
+- [x] Run database migrations once as a release step; the runtime database role
       should not require DDL privileges.
+
+Current evidence (2026-08-23): `scripts/migrate_database.py` requires a
+dedicated `migrator` process role, acquires a MySQL advisory lock, creates the
+initial schema, and records its version in `schema_migrations`. API and worker
+secure-mode configuration keeps runtime DDL disabled. A non-destructive
+forward/rollback rehearsal against a production-equivalent MySQL backup
+remains an open release gate.
 
 Acceptance criterion: killing and restarting API or worker processes during an
 incident neither loses work nor produces duplicate final revisions.

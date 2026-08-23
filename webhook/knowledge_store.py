@@ -39,8 +39,8 @@ def _decode(value):
     return value if isinstance(value, (dict, list)) else json.loads(value)
 
 
-def ensure_schema():
-    if not RUNTIME_SCHEMA_DDL_ENABLED:
+def ensure_schema(*, allow_ddl=False):
+    if not (RUNTIME_SCHEMA_DDL_ENABLED or allow_ddl):
         return
     with _connection() as conn, conn.cursor() as cur:
         cur.execute(

@@ -18,6 +18,8 @@ def _credentials():
         return settings.MYSQL_API_USER, settings.MYSQL_API_PASSWORD
     if role == "worker" and settings.MYSQL_WORKER_USER:
         return settings.MYSQL_WORKER_USER, settings.MYSQL_WORKER_PASSWORD
+    if role == "migrator" and settings.MYSQL_MIGRATOR_USER:
+        return settings.MYSQL_MIGRATOR_USER, settings.MYSQL_MIGRATOR_PASSWORD
     return settings.MYSQL_USER, settings.MYSQL_PASSWORD
 
 

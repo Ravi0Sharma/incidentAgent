@@ -19,9 +19,15 @@ def _connection():
     return mysql_connection()
 
 
-def _ensure_schema(cursor):
-    if not RUNTIME_SCHEMA_DDL_ENABLED:
+def ensure_schema(*, allow_ddl=False):
+    if not (RUNTIME_SCHEMA_DDL_ENABLED or allow_ddl):
         return
+    with _connection() as conn, conn.cursor() as cur:
+        _create_schema(cur)
+        conn.commit()
+
+
+def _create_schema(cursor):
     cursor.execute(
         "CREATE TABLE IF NOT EXISTS audit_events ("
         "event_id BIGINT AUTO_INCREMENT PRIMARY KEY, "
@@ -42,7 +48,8 @@ def record_audit_event(event_type, incident_id=None, **data):
         "data": redact_data(data),
     }
     with _connection() as conn, conn.cursor() as cur:
-        _ensure_schema(cur)
+        if RUNTIME_SCHEMA_DDL_ENABLED:
+            _create_schema(cur)
         cur.execute(
             "INSERT INTO audit_events (created_at,event_type,incident_id,data) VALUES (%s,%s,%s,%s)",
             (record["timestamp"], record["event_type"], incident_id,
@@ -56,7 +63,8 @@ def list_audit_events(incident_id=None, limit=100):
     """Read recent audit records for operational inspection (redacted at write)."""
     limit = max(1, min(int(limit), 1_000))
     with _connection() as conn, conn.cursor() as cur:
-        _ensure_schema(cur)
+        if RUNTIME_SCHEMA_DDL_ENABLED:
+            _create_schema(cur)
         if incident_id:
             cur.execute(
                 "SELECT created_at,event_type,incident_id,data FROM audit_events "

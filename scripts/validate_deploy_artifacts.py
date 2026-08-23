@@ -59,8 +59,16 @@ def main():
         "PUBLISH_EXTERNAL=false",
         "MYSQL_SSL_ENABLED=true",
         "OIDC_TENANT_CLAIM=tenant_id",
+        "MYSQL_MIGRATOR_USER=",
     ):
         _require(required in shadow, f"shadow baseline lacks {required}")
+    migration_entrypoint = ROOT / "scripts" / "migrate_database.py"
+    _require(migration_entrypoint.exists(), "database migration entrypoint is missing")
+    migration_source = migration_entrypoint.read_text(encoding="utf-8")
+    _require(
+        "PROCESS_ROLE=migrator" in migration_source,
+        "database migration entrypoint does not require the migrator role",
+    )
     print("deploy artifact validation passed")
 
 

@@ -87,8 +87,9 @@ def _add_column_if_missing(cur, table, column, definition):
         cur.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
 
 
-def ensure_schema():
-    if not RUNTIME_SCHEMA_DDL_ENABLED:
+def ensure_schema(*, allow_ddl=False):
+    """Create incident tables only for local development or the release migrator."""
+    if not (RUNTIME_SCHEMA_DDL_ENABLED or allow_ddl):
         return
     with _connection() as conn, conn.cursor() as cur:
         cur.execute(

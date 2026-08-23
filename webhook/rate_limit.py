@@ -16,6 +16,18 @@ def _connection():
     return mysql_connection()
 
 
+def ensure_schema(*, allow_ddl=False):
+    if not (RUNTIME_SCHEMA_DDL_ENABLED or allow_ddl):
+        return
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS webhook_rate_limits ("
+            "key_hash CHAR(64) NOT NULL, window_id BIGINT NOT NULL, request_count INT NOT NULL, "
+            "PRIMARY KEY (key_hash,window_id))"
+        )
+        conn.commit()
+
+
 def _test_allow(key, limit, window_seconds, current):
     bucket = _TEST_WINDOWS[str(key)]
     while bucket and current - bucket[0] >= window_seconds:

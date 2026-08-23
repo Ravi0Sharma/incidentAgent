@@ -30,9 +30,15 @@ def _nonce_hash(nonce):
     return hashlib.sha256(str(nonce).encode("utf-8")).hexdigest()
 
 
-def _ensure_schema(conn):
-    if not RUNTIME_SCHEMA_DDL_ENABLED:
+def ensure_schema(*, allow_ddl=False):
+    if not (RUNTIME_SCHEMA_DDL_ENABLED or allow_ddl):
         return
+    with _connection() as conn:
+        _create_schema(conn)
+        conn.commit()
+
+
+def _create_schema(conn):
     with conn.cursor() as cur:
         cur.execute(
             "CREATE TABLE IF NOT EXISTS webhook_nonces ("
@@ -53,7 +59,8 @@ def validate_and_record_nonce(timestamp, nonce, window_seconds, now=None):
         raise ReplayError("signature_timestamp_outside_window", "signature timestamp is outside replay window")
 
     with _connection() as conn:
-        _ensure_schema(conn)
+        if RUNTIME_SCHEMA_DDL_ENABLED:
+            _create_schema(conn)
         with conn.cursor() as cur:
             cur.execute("DELETE FROM webhook_nonces WHERE expires_at < %s", (current,))
             try:

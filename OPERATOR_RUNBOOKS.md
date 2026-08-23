@@ -1,5 +1,23 @@
 # Operator Runbooks
 
+## Database migration release
+
+Run migrations before starting or rolling API/worker instances for a release.
+Use a one-off process with `PROCESS_ROLE=migrator`,
+`RUNTIME_SCHEMA_DDL_ENABLED=false`, and the dedicated DDL-capable
+`MYSQL_MIGRATOR_USER` credentials:
+
+```
+python scripts/migrate_database.py apply
+python scripts/migrate_database.py check
+```
+
+The command holds a MySQL advisory lock and records the applied release in
+`schema_migrations`; repeat runs are safe. API and worker roles must not have
+DDL grants. Do not run a destructive database downgrade during an incident:
+roll back application code first, then use a tested backup/restore procedure
+if a schema reversal is unavoidable.
+
 ## Queue backlog or stuck job
 
 Inspect `incident_jobs` by status and lease expiry. Do not delete events.
