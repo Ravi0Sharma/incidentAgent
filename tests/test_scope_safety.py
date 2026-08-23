@@ -119,6 +119,8 @@ class ScopeSafetyTests(unittest.TestCase):
             OIDC_AUDIENCE="incident-agent",
             OIDC_JWKS_URL="https://identity.example.test/jwks",
             OIDC_ROLE_CLAIM="roles",
+            OIDC_TENANT_CLAIM="tenant_id",
+            DEPLOYMENT_TENANT_ID="tenant-a",
             OIDC_VIEWER_ROLES={"incident-reviewer"},
             OIDC_DECISION_ROLES={"incident-reviewer"},
             OIDC_OPERATOR_ROLES={"incident-operator"},
@@ -129,6 +131,7 @@ class ScopeSafetyTests(unittest.TestCase):
             "sub": "user-123",
             "exp": 2_000_000_000,
             "roles": ["incident-reviewer"],
+            "tenant_id": "tenant-a",
         }):
             self.assertTrue(api._review_authorized(request, "view"))
             self.assertTrue(api._review_authorized(request, "decision"))
@@ -155,6 +158,7 @@ class ScopeSafetyTests(unittest.TestCase):
                 "sub": "reviewer-123",
                 "exp": 2_000_000_000,
                 "roles": ["incident-viewer"],
+                "tenant_id": "tenant-a",
             },
         })
         with patch.multiple(
@@ -163,6 +167,8 @@ class ScopeSafetyTests(unittest.TestCase):
             REVIEW_AUTH_MODE="oidc",
             OIDC_ISSUER="https://identity.example.test/",
             OIDC_ROLE_CLAIM="roles",
+            OIDC_TENANT_CLAIM="tenant_id",
+            DEPLOYMENT_TENANT_ID="tenant-a",
             OIDC_VIEWER_ROLES={"incident-viewer"},
             OIDC_DECISION_ROLES={"incident-reviewer"},
         ):
