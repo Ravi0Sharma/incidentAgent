@@ -26,6 +26,13 @@ from webhook import incident_store
 
 
 INITIAL_MIGRATION = "20260823_01_initial_runtime_schema"
+IDEMPOTENT_JOB_EFFECTS_MIGRATION = "20260824_02_idempotent_job_effects"
+PUBLICATION_GUARD_MIGRATION = incident_store.REQUIRED_RUNTIME_MIGRATION
+REQUIRED_MIGRATIONS = (
+    INITIAL_MIGRATION,
+    IDEMPOTENT_JOB_EFFECTS_MIGRATION,
+    PUBLICATION_GUARD_MIGRATION,
+)
 MIGRATION_LOCK_NAME = "incident-agent-schema-migration"
 
 
@@ -48,6 +55,7 @@ def _expected_tables():
         "incident_queue_control",
         "incident_workers",
         "incident_dead_letters",
+        "incident_publications",
         "pending_reviews",
         "incident_lifecycle",
         "curated_knowledge",
@@ -118,6 +126,25 @@ def _apply_initial_schema():
         conn.commit()
 
 
+def _apply_idempotent_job_effects_schema():
+    # ``ensure_schema`` is deliberately DDL-enabled only in this migrator
+    # process. It adds the job-to-revision idempotency key and durable result
+    # fields without mutating existing records.
+    incident_store.ensure_schema(allow_ddl=True)
+
+
+def _apply_publication_guard_schema():
+    incident_store.ensure_schema(allow_ddl=True)
+
+
+def _record_migration(cur, migration_id):
+    cur.execute(
+        "INSERT INTO schema_migrations (migration_id,applied_at,applied_by) "
+        "VALUES (%s,UTC_TIMESTAMP(6),%s)",
+        (migration_id, settings.PROCESS_ROLE),
+    )
+
+
 def apply_migrations():
     """Apply pending schema migrations under a database advisory lock."""
     _validate_invocation()
@@ -128,28 +155,39 @@ def apply_migrations():
             raise RuntimeError("timed out waiting for the database migration lock")
         try:
             _ensure_ledger(conn)
+            applied = []
+            already_applied = []
             if _is_applied(conn, INITIAL_MIGRATION):
-                missing = _missing_runtime_tables(conn)
-                if missing:
-                    raise RuntimeError(
-                        "migration ledger exists but runtime schema is incomplete: "
-                        + ", ".join(missing)
-                    )
-                return {"applied": [], "already_applied": [INITIAL_MIGRATION]}
-            _apply_initial_schema()
-            cur.execute(
-                "INSERT INTO schema_migrations (migration_id,applied_at,applied_by) "
-                "VALUES (%s,UTC_TIMESTAMP(6),%s)",
-                (INITIAL_MIGRATION, settings.PROCESS_ROLE),
-            )
-            conn.commit()
+                already_applied.append(INITIAL_MIGRATION)
+            else:
+                _apply_initial_schema()
+                _record_migration(cur, INITIAL_MIGRATION)
+                conn.commit()
+                applied.append(INITIAL_MIGRATION)
+
+            if _is_applied(conn, IDEMPOTENT_JOB_EFFECTS_MIGRATION):
+                already_applied.append(IDEMPOTENT_JOB_EFFECTS_MIGRATION)
+            else:
+                _apply_idempotent_job_effects_schema()
+                _record_migration(cur, IDEMPOTENT_JOB_EFFECTS_MIGRATION)
+                conn.commit()
+                applied.append(IDEMPOTENT_JOB_EFFECTS_MIGRATION)
+
+            if _is_applied(conn, PUBLICATION_GUARD_MIGRATION):
+                already_applied.append(PUBLICATION_GUARD_MIGRATION)
+            else:
+                _apply_publication_guard_schema()
+                _record_migration(cur, PUBLICATION_GUARD_MIGRATION)
+                conn.commit()
+                applied.append(PUBLICATION_GUARD_MIGRATION)
+
             missing = _missing_runtime_tables(conn)
             if missing:
                 raise RuntimeError(
                     "migration did not create required runtime tables: "
                     + ", ".join(missing)
                 )
-            return {"applied": [INITIAL_MIGRATION], "already_applied": []}
+            return {"applied": applied, "already_applied": already_applied}
         finally:
             cur.execute("SELECT RELEASE_LOCK(%s)", (MIGRATION_LOCK_NAME,))
             conn.commit()
@@ -160,15 +198,23 @@ def check_migrations():
     _validate_invocation()
     with mysql_connection() as conn:
         _ensure_ledger(conn)
-        if not _is_applied(conn, INITIAL_MIGRATION):
-            raise RuntimeError(f"missing required database migration: {INITIAL_MIGRATION}")
+        missing_migrations = [
+            migration
+            for migration in REQUIRED_MIGRATIONS
+            if not _is_applied(conn, migration)
+        ]
+        if missing_migrations:
+            raise RuntimeError(
+                "missing required database migration: "
+                + ", ".join(missing_migrations)
+            )
         missing = _missing_runtime_tables(conn)
         if missing:
             raise RuntimeError(
                 "migration ledger exists but runtime schema is incomplete: "
                 + ", ".join(missing)
             )
-    return {"applied": [INITIAL_MIGRATION]}
+    return {"applied": list(REQUIRED_MIGRATIONS)}
 
 
 def main(argv=None):

@@ -44,7 +44,7 @@ class _Connection:
 
 class ReadinessTests(unittest.TestCase):
     def test_readiness_checks_schema_without_runtime_ddl_or_writes(self):
-        cursor = _Cursor(rows=[(1,), (1,)])
+        cursor = _Cursor(rows=[(1,), (3, 1)])
         connection = _Connection(cursor)
         with (
             patch.object(incident_store, "_connection", return_value=connection),
@@ -61,7 +61,7 @@ class ReadinessTests(unittest.TestCase):
         self.assertNotRegex(statements, r"\b(CREATE|ALTER|INSERT|UPDATE|DELETE)\b")
 
     def test_worker_readiness_also_avoids_schema_initialization(self):
-        cursor = _Cursor(rows=[(1,), (1,), (0, None)])
+        cursor = _Cursor(rows=[(1,), (3, 1), (0, None)])
         with (
             patch.object(
                 incident_store,
@@ -75,8 +75,24 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(result["worker"]["status"], "unavailable")
         ensure_schema.assert_not_called()
 
+    def test_worker_readiness_enforces_the_configured_replica_floor(self):
+        cursor = _Cursor(rows=[(1,), (3, 1), (1, None)])
+        with patch.object(
+            incident_store,
+            "_connection",
+            return_value=_Connection(cursor),
+        ):
+            result = incident_store.readiness_check(
+                require_worker=True,
+                minimum_workers=2,
+            )
+
+        self.assertEqual(result["worker"]["status"], "unavailable")
+        self.assertEqual(result["worker"]["active_workers"], 1)
+        self.assertEqual(result["worker"]["minimum_workers"], 2)
+
     def test_readiness_rejects_a_database_without_the_runtime_schema(self):
-        cursor = _Cursor(rows=[(1,), None])
+        cursor = _Cursor(rows=[(1,), (2, 0)])
         with patch.object(
             incident_store,
             "_connection",

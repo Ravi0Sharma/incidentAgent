@@ -207,6 +207,8 @@ def validate_runtime_config(config):
         )
     if int(getattr(config, "MAX_PENDING_JOBS", 1000)) <= 0:
         errors.append(f"MAX_PENDING_JOBS must be positive in {mode}")
+    if int(getattr(config, "MIN_ACTIVE_WORKERS", 0)) < 2:
+        errors.append(f"MIN_ACTIVE_WORKERS must be at least 2 in {mode}")
     log_source = str(
         getattr(config, "LOG_SOURCE", "loki")
     ).lower()
@@ -355,7 +357,22 @@ def validate_runtime_config(config):
     ):
         errors.append("*.amazonaws.com is required in EGRESS_ALLOWED_HOSTS")
     if config.PUBLISH_EXTERNAL:
-        errors.append("external publishing requires the unimplemented approval/audit outbox")
+        if mode == "shadow":
+            errors.append("external publishing must remain disabled in shadow")
+        slack_url = str(getattr(config, "SLACK_WEBHOOK_URL", ""))
+        if urlparse(slack_url).scheme != "https":
+            errors.append("SLACK_WEBHOOK_URL must use https for external publishing")
+        if not str(getattr(config, "SLACK_CHANNEL", "")).strip():
+            errors.append("SLACK_CHANNEL is required for external publishing")
+        if not str(getattr(config, "GITHUB_TOKEN", "")).strip():
+            errors.append("GITHUB_TOKEN is required for external publishing")
+        if not str(getattr(config, "GITHUB_REPO", "")).strip():
+            errors.append("GITHUB_REPO is required for external publishing")
+        slack_host = urlparse(slack_url).hostname
+        if slack_host and not _egress_host_allowed(slack_host, egress_hosts):
+            errors.append(
+                "SLACK_WEBHOOK_URL host is not present in EGRESS_ALLOWED_HOSTS"
+            )
     if errors:
         raise ValueError(
             f"Unsafe {mode} configuration: "

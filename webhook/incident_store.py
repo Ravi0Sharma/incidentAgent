@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import time
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pymysql
@@ -9,6 +11,7 @@ import pymysql
 from settings import (
     ANALYSIS_CODE_VERSION,
     MYSQL_DATABASE,
+    MYSQL_TABLE,
     MAX_PENDING_JOBS,
     OPENAI_MODEL,
     PROMPT_VERSION,
@@ -30,6 +33,13 @@ class EvidenceIntegrityError(ValueError):
 
 class QueueCapacityError(RuntimeError):
     """The durable analysis queue reached its configured admission limit."""
+
+
+class PublicationStateUncertainError(RuntimeError):
+    """An earlier external publication attempt cannot be safely retried."""
+
+
+REQUIRED_RUNTIME_MIGRATION = "20260824_03_publication_guard"
 
 
 def _connection():
@@ -87,6 +97,16 @@ def _add_column_if_missing(cur, table, column, definition):
         cur.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
 
 
+def _add_index_if_missing(cur, table, index, definition):
+    cur.execute(
+        "SELECT 1 FROM information_schema.statistics WHERE table_schema=%s "
+        "AND table_name=%s AND index_name=%s",
+        (MYSQL_DATABASE, table, index),
+    )
+    if not cur.fetchone():
+        cur.execute(f"ALTER TABLE {table} ADD {definition}")
+
+
 def ensure_schema(*, allow_ddl=False):
     """Create incident tables only for local development or the release migrator."""
     if not (RUNTIME_SCHEMA_DDL_ENABLED or allow_ddl):
@@ -120,8 +140,22 @@ def ensure_schema(*, allow_ddl=False):
         cur.execute(
             "CREATE TABLE IF NOT EXISTS incident_revisions ("
             "incident_id VARCHAR(128) NOT NULL, revision INT NOT NULL, "
-            "previous_revision INT NULL, reason VARCHAR(255) NOT NULL, execution_context JSON NULL, created_at DATETIME(6) NOT NULL, "
+            "previous_revision INT NULL, job_id BIGINT NULL, "
+            "reason VARCHAR(255) NOT NULL, execution_context JSON NULL, created_at DATETIME(6) NOT NULL, "
+            "UNIQUE KEY incident_revision_job (job_id), "
             "PRIMARY KEY (incident_id, revision))"
+        )
+        _add_column_if_missing(
+            cur,
+            "incident_revisions",
+            "job_id",
+            "job_id BIGINT NULL",
+        )
+        _add_index_if_missing(
+            cur,
+            "incident_revisions",
+            "incident_revision_job",
+            "UNIQUE KEY incident_revision_job (job_id)",
         )
         cur.execute(
             "CREATE TABLE IF NOT EXISTS incident_revision_heads ("
@@ -185,7 +219,8 @@ def ensure_schema(*, allow_ddl=False):
             "incident_id VARCHAR(128) NOT NULL, event_id BIGINT NOT NULL, kind VARCHAR(32) NOT NULL, "
             "status VARCHAR(32) NOT NULL, attempt_count INT NOT NULL DEFAULT 0, "
             "available_at DATETIME(6) NOT NULL, leased_until DATETIME(6) NULL, worker_id VARCHAR(128) NULL, "
-            "payload JSON NOT NULL, run_context JSON NULL, last_error JSON NULL, created_at DATETIME(6) NOT NULL, "
+            "payload JSON NOT NULL, run_context JSON NULL, result JSON NULL, "
+            "last_error JSON NULL, completed_at DATETIME(6) NULL, created_at DATETIME(6) NOT NULL, "
             "updated_at DATETIME(6) NOT NULL, INDEX incident_jobs_claim (status,available_at,leased_until), "
             "INDEX incident_jobs_incident (incident_id,job_id))"
         )
@@ -213,6 +248,13 @@ def ensure_schema(*, allow_ddl=False):
             (_now(),),
         )
         _add_column_if_missing(cur, "incident_jobs", "run_context", "run_context JSON NULL")
+        _add_column_if_missing(cur, "incident_jobs", "result", "result JSON NULL")
+        _add_column_if_missing(
+            cur,
+            "incident_jobs",
+            "completed_at",
+            "completed_at DATETIME(6) NULL",
+        )
         cur.execute(
             "CREATE TABLE IF NOT EXISTS incident_dead_letters ("
             "dead_letter_id BIGINT AUTO_INCREMENT PRIMARY KEY, job_id BIGINT NOT NULL UNIQUE, "
@@ -220,10 +262,19 @@ def ensure_schema(*, allow_ddl=False):
             "payload JSON NOT NULL, diagnostics JSON NOT NULL, failed_at DATETIME(6) NOT NULL, "
             "replayed_at DATETIME(6) NULL)"
         )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_publications ("
+            "publication_key CHAR(64) PRIMARY KEY, incident_id VARCHAR(128) NOT NULL, "
+            "draft_sha256 CHAR(64) NOT NULL, status VARCHAR(32) NOT NULL, "
+            "attempt_token CHAR(32) NOT NULL, issue_url TEXT NULL, diagnostics JSON NULL, "
+            "created_at DATETIME(6) NOT NULL, updated_at DATETIME(6) NOT NULL, "
+            "completed_at DATETIME(6) NULL, "
+            "INDEX incident_publications_incident (incident_id,created_at))"
+        )
         conn.commit()
 
 
-def worker_runtime_status(max_age_seconds=15):
+def worker_runtime_status(max_age_seconds=15, minimum_workers=1):
     """Return independently observed worker liveness from durable heartbeats."""
     cutoff = _now() - timedelta(seconds=float(max_age_seconds))
     with _connection() as conn, conn.cursor() as cur:
@@ -235,8 +286,11 @@ def worker_runtime_status(max_age_seconds=15):
         row = cur.fetchone()
         conn.commit()
     return {
-        "status": "ready" if int(row[0]) else "unavailable",
+        "status": (
+            "ready" if int(row[0]) >= int(minimum_workers) else "unavailable"
+        ),
         "active_workers": int(row[0]),
+        "minimum_workers": int(minimum_workers),
         "last_seen": row[1].isoformat() if row[1] else None,
     }
 
@@ -262,18 +316,35 @@ def record_worker_heartbeat(worker_id, status="running", current_job_id=None):
     return now.isoformat()
 
 
-def readiness_check(require_worker=False, worker_max_age_seconds=15):
+def readiness_check(
+    require_worker=False,
+    worker_max_age_seconds=15,
+    minimum_workers=1,
+):
     """Verify dependencies without creating or changing database state."""
     try:
         with _connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT 1")
             cur.fetchone()
             cur.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema=%s AND table_name='incident_jobs' LIMIT 1",
-                (MYSQL_DATABASE,),
+                "SELECT "
+                "(SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema=%s AND table_name IN (%s,%s,%s)),"
+                "(SELECT COUNT(*) FROM schema_migrations WHERE migration_id=%s)",
+                (
+                    MYSQL_DATABASE,
+                    "incident_jobs",
+                    "incident_publications",
+                    MYSQL_TABLE,
+                    REQUIRED_RUNTIME_MIGRATION,
+                ),
             )
-            schema_ready = bool(cur.fetchone())
+            schema_row = cur.fetchone()
+            schema_ready = bool(
+                schema_row
+                and int(schema_row[0]) == 3
+                and int(schema_row[1]) == 1
+            )
         if not schema_ready:
             return {
                 "database": "ready",
@@ -286,9 +357,14 @@ def readiness_check(require_worker=False, worker_max_age_seconds=15):
                 },
             }
         worker = (
-            worker_runtime_status(worker_max_age_seconds)
+            worker_runtime_status(worker_max_age_seconds, minimum_workers)
             if require_worker
-            else {"status": "not_required", "active_workers": 0, "last_seen": None}
+            else {
+                "status": "not_required",
+                "active_workers": 0,
+                "minimum_workers": int(minimum_workers),
+                "last_seen": None,
+            }
         )
         return {
             "database": "ready",
@@ -319,6 +395,12 @@ def operational_snapshot(worker_max_age_seconds=15):
         active_workers = int(cur.fetchone()[0])
         cur.execute("SELECT COUNT(*) FROM incident_job_locks")
         incident_locks = int(cur.fetchone()[0])
+        cur.execute(
+            "SELECT SUM(status='started'),SUM(status='uncertain'),"
+            "COALESCE(TIMESTAMPDIFF(SECOND,MIN(CASE WHEN status='started' "
+            "THEN created_at END),UTC_TIMESTAMP(6)),0) FROM incident_publications"
+        )
+        publication_row = cur.fetchone()
         conn.commit()
     return {
         "queue_pending": int(queue_row[0] or 0),
@@ -326,6 +408,12 @@ def operational_snapshot(worker_max_age_seconds=15):
         "queue_dead_letter": int(queue_row[2] or 0),
         "queue_oldest_pending_seconds": max(int(queue_row[3] or 0), 0),
         "active_workers": active_workers,
+        "publication_started": int(publication_row[0] or 0),
+        "publication_uncertain": int(publication_row[1] or 0),
+        "publication_oldest_started_seconds": max(
+            int(publication_row[2] or 0),
+            0,
+        ),
         "incident_locks": incident_locks,
     }
 
@@ -515,7 +603,13 @@ def append_event(incident_id, idempotency_key, event_type, payload, event_time=N
     )
 
 
-def create_revision(incident_id, reason, expected_revision=None, run_context=None):
+def _create_revision_once(
+    incident_id,
+    reason,
+    expected_revision=None,
+    run_context=None,
+    job_id=None,
+):
     ensure_schema()
     with _connection() as conn, conn.cursor() as cur:
         # Lock one existing head row instead of a moving MAX(revision) range.
@@ -532,6 +626,19 @@ def create_revision(incident_id, reason, expected_revision=None, run_context=Non
             (incident_id,),
         )
         current = cur.fetchone()[0]
+        if job_id is not None:
+            cur.execute(
+                "SELECT incident_id,revision FROM incident_revisions "
+                "WHERE job_id=%s",
+                (job_id,),
+            )
+            existing = cur.fetchone()
+            if existing:
+                if existing[0] != incident_id:
+                    conn.rollback()
+                    raise ValueError("job revision belongs to another incident")
+                conn.commit()
+                return int(existing[1])
         # Backfill a head created after older revision rows without taking a
         # range lock. New writers are already serialized by the head row.
         cur.execute(
@@ -546,8 +653,17 @@ def create_revision(incident_id, reason, expected_revision=None, run_context=Non
         revision = current + 1
         cur.execute(
             "INSERT INTO incident_revisions "
-            "(incident_id,revision,previous_revision,reason,execution_context,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
-            (incident_id, revision, current or None, reason, _json(complete_run_context(run_context)), _now()),
+            "(incident_id,revision,previous_revision,job_id,reason,execution_context,created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (
+                incident_id,
+                revision,
+                current or None,
+                job_id,
+                reason,
+                _json(complete_run_context(run_context)),
+                _now(),
+            ),
         )
         cur.execute(
             "UPDATE incident_revision_heads SET current_revision=%s,updated_at=%s "
@@ -556,6 +672,31 @@ def create_revision(incident_id, reason, expected_revision=None, run_context=Non
         )
         conn.commit()
         return revision
+
+
+def create_revision(
+    incident_id,
+    reason,
+    expected_revision=None,
+    run_context=None,
+    job_id=None,
+):
+    """Allocate one revision, retrying transient InnoDB lock conflicts."""
+    for attempt in range(3):
+        try:
+            return _create_revision_once(
+                incident_id,
+                reason,
+                expected_revision=expected_revision,
+                run_context=run_context,
+                job_id=job_id,
+            )
+        except pymysql.err.OperationalError as exc:
+            error_code = exc.args[0] if exc.args else None
+            if error_code not in {1205, 1213} or attempt == 2:
+                raise
+            time.sleep(0.01 * (attempt + 1))
+    raise AssertionError("unreachable revision retry state")
 
 
 def _canonical_evidence_items(state):
@@ -1262,13 +1403,15 @@ def renew_job_lease(job_id, worker_id, lease_seconds=120):
     return lease_until.isoformat()
 
 
-def complete_job(job_id, worker_id):
+def complete_job(job_id, worker_id, result=None):
     ensure_schema()
+    completed_at = _now()
     with _connection() as conn, conn.cursor() as cur:
         cur.execute(
-            "UPDATE incident_jobs SET status='completed',leased_until=NULL,updated_at=%s "
+            "UPDATE incident_jobs SET status='completed',leased_until=NULL,result=%s,"
+            "completed_at=%s,updated_at=%s "
             "WHERE job_id=%s AND status='leased' AND worker_id=%s",
-            (_now(), job_id, worker_id),
+            (_json(redact_data(result or {})), completed_at, completed_at, job_id, worker_id),
         )
         if not cur.rowcount:
             conn.rollback()
@@ -1389,3 +1532,86 @@ def enqueue_reprocessing(incident_id, run_context=None, max_pending_jobs=None):
         job_id = int(existing[0]) if existing else cur.lastrowid
         conn.commit()
     return {"incident_id": incident_id, "event_id": row[0], "job_id": job_id, "run_context": context}
+
+
+def begin_publication(incident_id, draft):
+    """Claim one external publication key without ever auto-retrying ambiguity."""
+    ensure_schema()
+    draft_sha256 = hashlib.sha256(str(draft).encode("utf-8")).hexdigest()
+    publication_key = hashlib.sha256(
+        f"{incident_id}:{draft_sha256}".encode("utf-8")
+    ).hexdigest()
+    attempt_token = uuid.uuid4().hex
+    now = _now()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO incident_publications "
+            "(publication_key,incident_id,draft_sha256,status,attempt_token,created_at,updated_at) "
+            "VALUES (%s,%s,%s,'started',%s,%s,%s) "
+            "ON DUPLICATE KEY UPDATE publication_key=publication_key",
+            (
+                publication_key,
+                incident_id,
+                draft_sha256,
+                attempt_token,
+                now,
+                now,
+            ),
+        )
+        inserted = cur.rowcount == 1
+        if inserted:
+            conn.commit()
+            return {
+                "publication_key": publication_key,
+                "attempt_token": attempt_token,
+                "status": "started",
+                "deduplicated": False,
+            }
+        cur.execute(
+            "SELECT status,issue_url FROM incident_publications "
+            "WHERE publication_key=%s FOR UPDATE",
+            (publication_key,),
+        )
+        status, issue_url = cur.fetchone()
+        conn.commit()
+    if status == "completed":
+        return {
+            "publication_key": publication_key,
+            "attempt_token": None,
+            "status": "completed",
+            "issue_url": issue_url or "",
+            "deduplicated": True,
+        }
+    raise PublicationStateUncertainError(
+        "a previous publication attempt is incomplete or uncertain; "
+        "reconcile providers before any manual retry"
+    )
+
+
+def complete_publication(publication_key, attempt_token, issue_url=None):
+    now = _now()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE incident_publications SET status='completed',issue_url=%s,"
+            "completed_at=%s,updated_at=%s WHERE publication_key=%s "
+            "AND status='started' AND attempt_token=%s",
+            (issue_url, now, now, publication_key, attempt_token),
+        )
+        if not cur.rowcount:
+            conn.rollback()
+            raise PublicationStateUncertainError(
+                "publication claim is no longer owned by this attempt"
+            )
+        conn.commit()
+
+
+def mark_publication_uncertain(publication_key, attempt_token, error):
+    diagnostics = redact_data({"error": str(error)})
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE incident_publications SET status='uncertain',diagnostics=%s,"
+            "updated_at=%s WHERE publication_key=%s AND status='started' "
+            "AND attempt_token=%s",
+            (_json(diagnostics), _now(), publication_key, attempt_token),
+        )
+        conn.commit()

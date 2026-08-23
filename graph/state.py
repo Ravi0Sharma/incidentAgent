@@ -74,6 +74,9 @@ class IncidentState(TypedDict, total=False):
     rca_chain: str
 
     postmortem_draft: str
+    publish_review_status: str
+    publish_review_feedback: str
+    approved_draft_sha256: str
     postmortem_url: str
     postmortem_html_path: str
 

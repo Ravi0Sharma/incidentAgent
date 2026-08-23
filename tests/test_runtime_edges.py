@@ -119,6 +119,7 @@ class JobHandlerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resolved_job_creates_revision_and_skips_workflow(self):
         job = {
+            "job_id": 31,
             "incident_id": "INC-RESOLVED",
             "kind": "analyze",
             "event_id": 3,
@@ -135,6 +136,7 @@ class JobHandlerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_alert_creates_revision_and_passes_reprocessing_context(self):
         job = {
+            "job_id": 32,
             "incident_id": "INC-NEW",
             "kind": "reprocess",
             "event_id": 8,

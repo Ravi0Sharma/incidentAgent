@@ -1,8 +1,10 @@
 """Durable MySQL worker with heartbeat and graceful drain semantics."""
 
 import asyncio
+import os
 import socket
 import time
+import uuid
 
 from settings import (
     JOB_HEARTBEAT_INTERVAL_SECONDS,
@@ -35,7 +37,26 @@ def is_retryable_failure(error):
 
 
 def default_worker_id():
-    return socket.gethostname()[:96]
+    """Return a collision-resistant identity for each worker process."""
+    host = socket.gethostname().split(".", 1)[0][:64]
+    return f"{host}:{os.getpid()}:{uuid.uuid4().hex[:12]}"[:128]
+
+
+def _lease_lost_result(job, error):
+    increment("jobs", kind=job["kind"], outcome="lease_lost")
+    emit_log_event(
+        "job_lease_lost",
+        severity="ERROR",
+        incident_id=job["incident_id"],
+        node="worker",
+        error_category="lease_lost",
+        details={"job_id": job["job_id"], "kind": job["kind"]},
+    )
+    return {
+        "status": "lease_lost",
+        "job_id": job["job_id"],
+        "error": str(error),
+    }
 
 
 async def _maintain_lease(job, worker_id, stop):
@@ -76,6 +97,12 @@ async def process_one(handler, worker_id=None):
     if not job:
         increment("queue_poll", outcome="empty")
         return {"status": "empty"}
+    await asyncio.to_thread(
+        record_worker_heartbeat,
+        worker_id,
+        "running",
+        job["job_id"],
+    )
     started = time.monotonic()
     stop_heartbeat = asyncio.Event()
     handler_task = asyncio.create_task(handler(job))
@@ -94,38 +121,48 @@ async def process_one(handler, worker_id=None):
         result = await handler_task
         stop_heartbeat.set()
         await heartbeat_task
+        try:
+            await asyncio.to_thread(
+                complete_job,
+                job["job_id"],
+                worker_id,
+                result,
+            )
+        except ValueError as exc:
+            raise LeaseLostError(str(exc)) from exc
         await asyncio.to_thread(
-            complete_job,
-            job["job_id"],
+            record_worker_heartbeat,
             worker_id,
+            "running",
+            None,
         )
         observe("job_duration_seconds", time.monotonic() - started, kind=job["kind"], outcome="completed")
         increment("jobs", kind=job["kind"], outcome="completed")
         emit_log_event("job_completed", incident_id=job["incident_id"], revision_id=result.get("revision"), node="worker", details={"job_id": job["job_id"], "kind": job["kind"]})
         return {"status": "completed", "job_id": job["job_id"], "result": result}
     except LeaseLostError as exc:
-        outcome = "lease_lost"
-        increment("jobs", kind=job["kind"], outcome=outcome)
-        emit_log_event(
-            "job_lease_lost",
-            severity="ERROR",
-            incident_id=job["incident_id"],
-            node="worker",
-            error_category="lease_lost",
-            details={"job_id": job["job_id"], "kind": job["kind"]},
-        )
-        return {"status": outcome, "job_id": job["job_id"], "error": str(exc)}
+        return _lease_lost_result(job, exc)
     except Exception as exc:
         stop_heartbeat.set()
-        if not heartbeat_task.done():
+        try:
             await heartbeat_task
-        outcome = await asyncio.to_thread(
-            fail_job,
-            job,
-            worker_id,
-            exc,
-            1 if not is_retryable_failure(exc) else 3,
-        )
+        except LeaseLostError as lease_error:
+            return _lease_lost_result(job, lease_error)
+        try:
+            outcome = await asyncio.to_thread(
+                fail_job,
+                job,
+                worker_id,
+                exc,
+                1 if not is_retryable_failure(exc) else 3,
+            )
+        except ValueError as lease_error:
+            if "job lease is not owned" in str(lease_error):
+                return _lease_lost_result(
+                    job,
+                    LeaseLostError(str(lease_error)),
+                )
+            raise
         observe("job_duration_seconds", time.monotonic() - started, kind=job["kind"], outcome=outcome)
         increment("jobs", kind=job["kind"], outcome=outcome)
         emit_log_event(

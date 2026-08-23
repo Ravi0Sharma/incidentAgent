@@ -37,6 +37,7 @@ from settings import (
     MAX_ALERT_LABELS,
     MAX_ALERTS_PER_REQUEST,
     MAX_WEBHOOK_BODY_BYTES,
+    MIN_ACTIVE_WORKERS,
     METRICS_BEARER_TOKEN,
     REVIEW_PASSWORD,
     REVIEW_USERNAME,
@@ -559,6 +560,9 @@ async def protect_reviewer_surface(request, call_next):
     ):
         return await call_next(request)
     action = "view"
+    publish_decision = (
+        path.startswith("/alerts/") and path.endswith("/publish")
+    )
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         action = (
             "view"
@@ -570,8 +574,9 @@ async def protect_reviewer_surface(request, call_next):
             )
         )
     if _review_authorized(request, action):
-        if action == "decision":
-            thread_id = path[len("/alerts/"):-len("/review")].strip("/")
+        if action == "decision" or publish_decision:
+            suffix = "/publish" if publish_decision else "/review"
+            thread_id = path[len("/alerts/"):-len(suffix)].strip("/")
             token = request.headers.get("x-csrf-token", "")
             identity = _reviewer_identity(request)
             if not _valid_review_csrf(token, thread_id, identity):
@@ -871,6 +876,37 @@ async def incident_detail(
             + html.escape(thread_id)
             + ".</p><p><a href='/'>"
             "&larr; back</a></p>"
+        )
+
+    if p.get("review_stage") == "publish":
+        thread = html.escape(thread_id)
+        draft = html.escape(str(p.get("postmortem_draft", "")))
+        csrf = _issue_review_csrf(thread_id, _reviewer_identity(request))
+        return page(
+            "<p><a href='/'>&larr; all incidents</a></p>"
+            "<h1>Final publication review</h1>"
+            "<p class='muted'>External publishing remains blocked until an "
+            "operator approves this exact generated draft.</p>"
+            "<div class='card'><h3>Postmortem draft</h3><pre style='white-space:"
+            "pre-wrap'>" + draft + "</pre></div>"
+            "<div class='card'><h3>Publication decision</h3>"
+            "<textarea id='fb' placeholder='Reason for rejection'></textarea>"
+            "<div class='row'><button onclick=\"decide('approved')\">"
+            "Approve external publication</button>"
+            "<button class='reject' onclick=\"decide('rejected')\">"
+            "Reject publication</button></div><p id='status'></p></div>"
+            "<script>var pendingRevision="
+            + json.dumps(p.get("pending_revision"))
+            + ";var csrfToken="
+            + json.dumps(csrf)
+            + ";function decide(status){fetch('/alerts/"
+            + thread
+            + "/publish',{method:'POST',headers:{'Content-Type':'application/json',"
+            "'X-CSRF-Token':csrfToken},body:JSON.stringify({status:status,"
+            "pending_revision:pendingRevision,feedback:document.getElementById('fb').value})})"
+            ".then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||r.status);return d;})})"
+            ".then(function(){location.href='/'})"
+            ".catch(function(e){document.getElementById('status').textContent=e.message;});}</script>"
         )
 
     items, groups = timeline_items(
@@ -1524,6 +1560,15 @@ async def review(
             }
         )
 
+    if pending.get("review_stage") == "publish":
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "this incident requires the final publication endpoint",
+                "code": "publish_review_required",
+            },
+        )
+
     lifecycle = registry.get_lifecycle(thread_id)
     if lifecycle and lifecycle.get("status") == "resolved":
         return JSONResponse(
@@ -1636,17 +1681,34 @@ async def review(
             expected_pending_version=pending.get("pending_revision"),
         )
         lifecycle = registry.get_lifecycle(thread_id)
+        next_status = (
+            "awaiting_publish_review"
+            if is_awaiting_review(state) and state.get("postmortem_draft")
+            else (
+                "awaiting_analysis_review"
+                if is_awaiting_review(state)
+                else "completed"
+            )
+        )
         registry.transition_lifecycle(
             thread_id,
-            "awaiting_analysis_review" if is_awaiting_review(state) else "completed",
-            "revised analysis awaits review" if is_awaiting_review(state) else "review workflow completed",
+            next_status,
+            (
+                "postmortem draft awaits final publication review"
+                if next_status == "awaiting_publish_review"
+                else (
+                    "revised analysis awaits review"
+                    if is_awaiting_review(state)
+                    else "review workflow completed"
+                )
+            ),
             lifecycle["version"] if lifecycle else None,
         )
     except registry.RevisionConflictError as exc:
         return JSONResponse(status_code=409, content={"error": str(exc), "code": "stale_incident_revision"})
 
     draft_record = None
-    if not is_awaiting_review(state) and state.get("postmortem_draft"):
+    if state.get("postmortem_draft"):
         draft_record = record_postmortem_draft(
             thread_id,
             state["postmortem_draft"],
@@ -1668,6 +1730,100 @@ async def review(
             "postmortem_draft", ""
         ),
         "postmortem_draft_version": (draft_record or {}).get("version"),
+    }
+
+
+@app.post("/alerts/{thread_id}/publish")
+async def publish_review_decision(
+    thread_id: str,
+    payload: dict,
+    request: Request,
+):
+    pending = registry.get_pending(thread_id) or {}
+    if pending.get("review_stage") != "publish":
+        return JSONResponse(
+            status_code=409,
+            content={"error": "no final publication review is pending"},
+        )
+    try:
+        submitted_version = int(payload.get("pending_revision"))
+    except (TypeError, ValueError):
+        submitted_version = -1
+    if submitted_version != pending.get("pending_revision"):
+        return JSONResponse(
+            status_code=409,
+            content={"error": "publication draft changed; reload before deciding"},
+        )
+    status = str(payload.get("status", "rejected"))
+    if status not in {"approved", "rejected"}:
+        return JSONResponse(status_code=400, content={"error": "invalid publication decision"})
+    feedback = str(payload.get("feedback") or "")[:2_000]
+    if status == "rejected" and not feedback.strip():
+        return JSONResponse(
+            status_code=400,
+            content={"error": "publication rejection requires a reason"},
+        )
+    draft_sha256 = hashlib.sha256(
+        str(pending.get("postmortem_draft", "")).encode("utf-8")
+    ).hexdigest()
+    decision_key = hashlib.sha256(
+        f"{thread_id}:publish:{submitted_version}:{status}:{feedback}".encode("utf-8")
+    ).hexdigest()
+    append_event(
+        thread_id,
+        decision_key,
+        "publication_" + status,
+        {
+            "incident_id": thread_id,
+            "draft_version": submitted_version,
+            "draft_sha256": draft_sha256,
+            "status": status,
+            "feedback": feedback,
+            "reviewer": _reviewer_identity(request),
+        },
+        clock_quality="server_received_time",
+    )
+    record_audit_event(
+        "publication_review_submitted",
+        thread_id,
+        decision=status,
+        draft_sha256=draft_sha256,
+        reviewer_identity=_reviewer_identity(request),
+        request_id=request.headers.get("x-request-id"),
+    )
+    state = await graph.ainvoke(
+        Command(
+            resume={
+                "status": status,
+                "feedback": feedback,
+                "draft_sha256": draft_sha256,
+            }
+        ),
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    sync_registry(
+        thread_id,
+        {
+            "alertname": pending.get("alertname", "Incident"),
+            "service": pending.get("service", "unknown"),
+            "severity": pending.get("severity", "unknown"),
+            "message": pending.get("message", ""),
+        },
+        state,
+        expected_pending_version=submitted_version,
+    )
+    lifecycle = registry.get_lifecycle(thread_id)
+    registry.transition_lifecycle(
+        thread_id,
+        "completed" if status == "approved" else "drafting_postmortem",
+        "publication approved" if status == "approved" else "publication rejected",
+        lifecycle["version"] if lifecycle else None,
+    )
+    return {
+        "thread_id": thread_id,
+        "publication_status": status,
+        "postmortem_url": state.get("postmortem_url", ""),
+        "external_effect_attempted": status == "approved",
     }
 
 
@@ -1741,6 +1897,7 @@ async def readyz():
     dependencies = readiness_check(
         require_worker=not API_DRAIN_JOBS,
         worker_max_age_seconds=WORKER_HEARTBEAT_STALE_SECONDS,
+        minimum_workers=MIN_ACTIVE_WORKERS,
     )
     if (
         dependencies["database"] != "ready"

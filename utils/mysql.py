@@ -1,5 +1,6 @@
 """Bounded process-local MySQL pool with role and TLS-aware connections."""
 
+import os
 import queue
 import threading
 
@@ -53,8 +54,31 @@ class _Pool:
         self._available = queue.LifoQueue(maxsize=settings.MYSQL_POOL_SIZE)
         self._created = 0
         self._lock = threading.Lock()
+        self._pid = os.getpid()
+
+    def _ensure_process(self):
+        """Never reuse a parent process's sockets after fork."""
+        current_pid = os.getpid()
+        if current_pid == self._pid:
+            return
+        with self._lock:
+            if current_pid == self._pid:
+                return
+            while True:
+                try:
+                    inherited = self._available.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    inherited.close()
+                except Exception:
+                    pass
+            self._available = queue.LifoQueue(maxsize=settings.MYSQL_POOL_SIZE)
+            self._created = 0
+            self._pid = current_pid
 
     def acquire(self):
+        self._ensure_process()
         try:
             connection = self._available.get_nowait()
         except queue.Empty:
@@ -78,9 +102,16 @@ class _Pool:
         except Exception:
             self.discard(connection)
             raise
-        return _PooledConnection(self, connection)
+        return _PooledConnection(self, connection, self._pid)
 
-    def release(self, connection):
+    def release(self, connection, acquired_pid=None):
+        self._ensure_process()
+        if acquired_pid is not None and acquired_pid != os.getpid():
+            try:
+                connection.close()
+            except Exception:
+                pass
+            return
         try:
             connection.rollback()
             self._available.put_nowait(connection)
@@ -95,6 +126,7 @@ class _Pool:
                 self._created = max(0, self._created - 1)
 
     def stats(self):
+        self._ensure_process()
         with self._lock:
             created = self._created
         return {
@@ -106,9 +138,10 @@ class _Pool:
 
 
 class _PooledConnection:
-    def __init__(self, pool, connection):
+    def __init__(self, pool, connection, acquired_pid):
         self._pool = pool
         self._connection = connection
+        self._acquired_pid = acquired_pid
         self._released = False
 
     def __getattr__(self, name):
@@ -129,7 +162,7 @@ class _PooledConnection:
     def close(self):
         if not self._released:
             self._released = True
-            self._pool.release(self._connection)
+            self._pool.release(self._connection, self._acquired_pid)
 
 
 _POOL = _Pool()

@@ -78,6 +78,7 @@ async def run_incident_job(job):
         "reprocessing stored event" if job["kind"] == "reprocess"
         else "new alert observation",
         run_context=job.get("run_context"),
+        job_id=job["job_id"],
     )
     if normalized.get("status") == "resolved":
         return {

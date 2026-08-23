@@ -28,12 +28,13 @@ class WorkerRuntimeTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(worker, "claim_next_job", return_value=self.job),
             patch.object(worker, "complete_job") as complete,
+            patch.object(worker, "record_worker_heartbeat"),
             patch.object(worker, "emit_log_event"),
         ):
             result = await worker.process_one(handler, "worker-a")
 
         self.assertEqual(result["status"], "completed")
-        complete.assert_called_once_with(41, "worker-a")
+        complete.assert_called_once_with(41, "worker-a", {"revision": 7})
 
     async def test_handler_failure_uses_the_durable_failure_path(self):
         async def handler(job):
@@ -42,6 +43,7 @@ class WorkerRuntimeTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(worker, "claim_next_job", return_value=self.job),
             patch.object(worker, "fail_job", return_value="retry") as fail,
+            patch.object(worker, "record_worker_heartbeat"),
             patch.object(worker, "emit_log_event"),
         ):
             result = await worker.process_one(handler, "worker-a")
@@ -62,12 +64,34 @@ class WorkerRuntimeTests(unittest.IsolatedAsyncioTestCase):
             patch.object(worker, "claim_next_job", return_value=self.job),
             patch.object(worker, "_maintain_lease", side_effect=lose_lease),
             patch.object(worker, "complete_job") as complete,
+            patch.object(worker, "record_worker_heartbeat"),
             patch.object(worker, "emit_log_event"),
         ):
             result = await worker.process_one(handler, "worker-a")
 
         self.assertEqual(result["status"], "lease_lost")
         complete.assert_not_called()
+
+    async def test_terminal_handler_error_is_dead_lettered_without_retry(self):
+        async def handler(job):
+            raise ValueError("invalid normalized payload")
+
+        with (
+            patch.object(worker, "claim_next_job", return_value=self.job),
+            patch.object(worker, "fail_job", return_value="dead_letter") as fail,
+            patch.object(worker, "record_worker_heartbeat"),
+            patch.object(worker, "emit_log_event"),
+        ):
+            result = await worker.process_one(handler, "worker-a")
+
+        self.assertEqual(result["status"], "dead_letter")
+        self.assertEqual(fail.call_args.args[3], 1)
+
+    def test_default_worker_ids_are_unique_on_the_same_host(self):
+        first = worker.default_worker_id()
+        second = worker.default_worker_id()
+        self.assertNotEqual(first, second)
+        self.assertLessEqual(len(first), 128)
 
     async def test_run_forever_records_start_and_stop_heartbeats(self):
         stop = asyncio.Event()

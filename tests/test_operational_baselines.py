@@ -52,6 +52,7 @@ def _production_config(**overrides):
         "MYSQL_WORKER_USER": "incident_worker",
         "MYSQL_POOL_SIZE": 8,
         "MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS": 5,
+        "MIN_ACTIVE_WORKERS": 2,
         "MYSQL_SSL_ENABLED": True,
         "MYSQL_SSL_VERIFY_IDENTITY": True,
         "RUNTIME_SCHEMA_DDL_ENABLED": False,
@@ -272,6 +273,23 @@ class OperationalBaselineTests(unittest.TestCase):
                     PUBLISH_EXTERNAL=True,
                 )
             )
+
+    def test_production_external_publishing_requires_guarded_provider_config(self):
+        with self.assertRaisesRegex(ValueError, "SLACK_WEBHOOK_URL"):
+            validate_runtime_config(
+                _production_config(PUBLISH_EXTERNAL=True)
+            )
+
+        config = _production_config(
+            PUBLISH_EXTERNAL=True,
+            SLACK_WEBHOOK_URL="https://hooks.slack.example/services/test",
+            SLACK_CHANNEL="#incident-review",
+            EGRESS_ALLOWED_HOSTS={
+                *_production_config().EGRESS_ALLOWED_HOSTS,
+                "hooks.slack.example",
+            },
+        )
+        self.assertEqual(validate_runtime_config(config), [])
 
     def test_unknown_runtime_mode_fails_closed(
         self,

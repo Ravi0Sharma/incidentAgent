@@ -1,4 +1,5 @@
 import hashlib
+import json
 import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -268,3 +269,63 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
                 range(4),
             ))
         self.assertEqual(sorted(revisions), [1, 2, 3, 4])
+
+    def test_retried_job_reuses_revision_and_persists_completion_result(self):
+        event = record_event_and_enqueue(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "idempotent-job").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatency"},
+        )
+        first_claim = claim_next_job("worker-crashed", lease_seconds=120)
+        first_revision = create_revision(
+            self.incident_id,
+            "new alert observation",
+            job_id=first_claim["job_id"],
+        )
+
+        with registry._connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE incident_jobs SET leased_until=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND "
+                "WHERE job_id=%s",
+                (event["job_id"],),
+            )
+            cur.execute(
+                "UPDATE incident_job_locks SET leased_until=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND "
+                "WHERE incident_id=%s",
+                (self.incident_id,),
+            )
+            conn.commit()
+
+        recovered = claim_next_job("worker-recovery", lease_seconds=120)
+        recovered_revision = create_revision(
+            self.incident_id,
+            "new alert observation",
+            job_id=recovered["job_id"],
+        )
+        self.assertEqual(recovered_revision, first_revision)
+        complete_job(
+            recovered["job_id"],
+            "worker-recovery",
+            {"revision": recovered_revision, "status": "completed"},
+        )
+
+        with registry._connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT status,attempt_count,result,completed_at FROM incident_jobs "
+                "WHERE job_id=%s",
+                (event["job_id"],),
+            )
+            status, attempts, result, completed_at = cur.fetchone()
+            cur.execute(
+                "SELECT COUNT(*) FROM incident_revisions WHERE job_id=%s",
+                (event["job_id"],),
+            )
+            revision_count = cur.fetchone()[0]
+
+        self.assertEqual(status, "completed")
+        self.assertEqual(attempts, 2)
+        self.assertEqual(revision_count, 1)
+        decoded_result = result if isinstance(result, dict) else json.loads(result)
+        self.assertEqual(decoded_result["revision"], first_revision)
+        self.assertIsNotNone(completed_at)

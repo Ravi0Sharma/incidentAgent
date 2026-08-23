@@ -116,6 +116,10 @@ from graph.nodes.draft_postmortem import (
 from graph.nodes.publish import (
     publish
 )
+from graph.nodes.publish_review import (
+    publish_review,
+    publish_review_router,
+)
 
 from graph.routing import (
     review_router
@@ -218,6 +222,9 @@ builder.add_node(
 )
 builder.add_node(
     "publish", publish
+)
+builder.add_node(
+    "publish_review", publish_review
 )
 
 
@@ -356,13 +363,19 @@ builder.add_edge(
 
 builder.add_edge(
     "draft_postmortem",
-    "publish"
+    "publish_review"
 )
 
-builder.add_edge(
-    "publish",
-    END
+builder.add_conditional_edges(
+    "publish_review",
+    publish_review_router,
+    {
+        "publish": "publish",
+        "end": END,
+    },
 )
+
+builder.add_edge("publish", END)
 
 
 checkpointer = build_checkpointer()

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sqlite3
@@ -20,6 +21,10 @@ from settings import (
     RUNTIME_SCHEMA_DDL_ENABLED,
 )
 from utils.mysql import connection as mysql_connection
+
+
+class CheckpointConflictError(RuntimeError):
+    """An immutable checkpoint key was reused with different content."""
 
 
 class SQLiteSaver(MemorySaver):
@@ -335,6 +340,22 @@ class MySQLSaver(MemorySaver):
             values[channel] = self.serde.loads_typed((row[0], bytes(row[1])))
         return values
 
+    @staticmethod
+    def _assert_immutable_row(cursor, table, key_columns, key_values, expected):
+        columns = ",".join(expected)
+        predicate = " AND ".join(f"{column}=%s" for column in key_columns)
+        cursor.execute(
+            f"SELECT {columns} FROM `{table}` WHERE {predicate}",
+            tuple(key_values),
+        )
+        row = cursor.fetchone()
+        actual = tuple(bytes(value) if isinstance(value, bytearray) else value for value in row)
+        wanted = tuple(expected.values())
+        if actual != wanted:
+            raise CheckpointConflictError(
+                f"immutable checkpoint row conflict in {table}"
+            )
+
     def _tuple_from_row(self, cursor, row):
         thread_id, namespace, checkpoint_id, ctype, cblob, mtype, mblob, parent = row
         checkpoint = self.serde.loads_typed((ctype, bytes(cblob)))
@@ -441,6 +462,20 @@ class MySQLSaver(MemorySaver):
                         parent,
                     ),
                 )
+                if cursor.rowcount == 0:
+                    self._assert_immutable_row(
+                        cursor,
+                        MYSQL_TABLE,
+                        ("thread_id", "checkpoint_ns", "checkpoint_id"),
+                        (thread, namespace, checkpoint_id),
+                        {
+                            "checkpoint_type": checkpoint_value[0],
+                            "checkpoint_blob": checkpoint_value[1],
+                            "metadata_type": metadata_value[0],
+                            "metadata_blob": metadata_value[1],
+                            "parent_checkpoint_id": parent,
+                        },
+                    )
                 for channel, version in new_versions.items():
                     kind, blob = self.serde.dumps_typed(values[channel]) if channel in values else ("empty", b"")
                     cursor.execute(
@@ -448,6 +483,14 @@ class MySQLSaver(MemorySaver):
                         "ON DUPLICATE KEY UPDATE version=version",
                         (thread, namespace, channel, str(version), kind, blob),
                     )
+                    if cursor.rowcount == 0:
+                        self._assert_immutable_row(
+                            cursor,
+                            f"{MYSQL_TABLE}_blobs",
+                            ("thread_id", "checkpoint_ns", "channel", "version"),
+                            (thread, namespace, channel, str(version)),
+                            {"value_type": kind, "value_blob": blob},
+                        )
                 db.commit()
             return {"configurable": {"thread_id": thread, "checkpoint_ns": namespace, "checkpoint_id": checkpoint_id}}
 
@@ -477,7 +520,59 @@ class MySQLSaver(MemorySaver):
                             task_path,
                         ),
                     )
+                    if cursor.rowcount == 0:
+                        self._assert_immutable_row(
+                            cursor,
+                            f"{MYSQL_TABLE}_writes",
+                            (
+                                "thread_id",
+                                "checkpoint_ns",
+                                "checkpoint_id",
+                                "task_id",
+                                "write_idx",
+                            ),
+                            (thread, namespace, checkpoint_id, task_id, write_index),
+                            {
+                                "channel": channel,
+                                "value_type": serialized[0],
+                                "value_blob": serialized[1],
+                                "task_path": task_path,
+                            },
+                        )
                 db.commit()
+
+    async def aget_tuple(self, config):
+        return await asyncio.to_thread(self.get_tuple, config)
+
+    async def alist(self, config, *, filter=None, before=None, limit=None):
+        values = await asyncio.to_thread(
+            lambda: list(
+                self.list(config, filter=filter, before=before, limit=limit)
+            )
+        )
+        for value in values:
+            yield value
+
+    async def aput(self, config, checkpoint, metadata, new_versions):
+        return await asyncio.to_thread(
+            self.put,
+            config,
+            checkpoint,
+            metadata,
+            new_versions,
+        )
+
+    async def aput_writes(self, config, writes, task_id, task_path=""):
+        return await asyncio.to_thread(
+            self.put_writes,
+            config,
+            writes,
+            task_id,
+            task_path,
+        )
+
+    async def adelete_thread(self, thread_id):
+        await asyncio.to_thread(self.delete_thread, thread_id)
 
     def delete_thread(self, thread_id):
         with self._lock:

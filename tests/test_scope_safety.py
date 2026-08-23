@@ -205,7 +205,9 @@ class ScopeSafetyTests(unittest.TestCase):
             api,
             ENVIRONMENT="local",
             REVIEW_CSRF_SECRET="csrf-secret-with-more-than-32-characters",
-        ), patch.object(api, "_review_authorized", return_value=True), patch.object(
+        ), patch.object(
+            api, "_review_authorized", return_value=True
+        ) as authorized, patch.object(
             api, "_reviewer_identity", return_value=identity
         ):
             missing = SimpleNamespace(
@@ -232,6 +234,17 @@ class ScopeSafetyTests(unittest.TestCase):
                 asyncio.run(api.protect_reviewer_surface(valid, accepted)),
                 "accepted",
             )
+
+            publish = SimpleNamespace(
+                url=SimpleNamespace(path="/alerts/INC-1/publish"),
+                method="POST",
+                headers={"x-csrf-token": token},
+            )
+            self.assertEqual(
+                asyncio.run(api.protect_reviewer_surface(publish, accepted)),
+                "accepted",
+            )
+            self.assertIn("operator", [call.args[1] for call in authorized.call_args_list])
 
     def test_optional_evidence_source_failures_are_explicit(self):
         state = {

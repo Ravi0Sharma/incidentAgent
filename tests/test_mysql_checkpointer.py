@@ -1,9 +1,10 @@
 """Integration coverage for database-direct checkpoint visibility."""
 
+import asyncio
 import unittest
 import uuid
 
-from graph.checkpointer import MySQLSaver
+from graph.checkpointer import CheckpointConflictError, MySQLSaver
 from langgraph.checkpoint.base import empty_checkpoint
 from utils.mysql import connection as mysql_connection
 from settings import MYSQL_TABLE
@@ -45,7 +46,8 @@ class MySQLCheckpointerTests(unittest.TestCase):
         saved = MySQLSaver().put(config, checkpoint, {}, {"signal": version})
         stale = dict(checkpoint)
         stale["channel_values"] = {"signal": "stale-overwrite"}
-        MySQLSaver().put(config, stale, {}, {"signal": version})
+        with self.assertRaises(CheckpointConflictError):
+            MySQLSaver().put(config, stale, {}, {"signal": version})
 
         loaded = MySQLSaver().get_tuple(saved)
         self.assertEqual(loaded.checkpoint["channel_values"]["signal"], "first")
@@ -63,4 +65,36 @@ class MySQLCheckpointerTests(unittest.TestCase):
         listed = list(saver.list(config, filter={"source": "test"}, limit=1))
 
         self.assertEqual(latest.checkpoint["channel_values"]["signal"], "listed")
+        self.assertEqual(len(listed), 1)
+
+    def test_async_contract_uses_the_database_backed_operations(self):
+        async def exercise():
+            checkpoint = empty_checkpoint()
+            version = "00000000000000000000000000000001.0000000000000000"
+            checkpoint["channel_values"] = {"signal": "async"}
+            checkpoint["channel_versions"] = {"signal": version}
+            config = {
+                "configurable": {
+                    "thread_id": self.thread_id,
+                    "checkpoint_ns": "",
+                }
+            }
+            saved = await MySQLSaver().aput(
+                config,
+                checkpoint,
+                {"source": "async-test"},
+                {"signal": version},
+            )
+            loaded = await MySQLSaver().aget_tuple(saved)
+            listed = [
+                value
+                async for value in MySQLSaver().alist(
+                    config,
+                    filter={"source": "async-test"},
+                )
+            ]
+            return loaded, listed
+
+        loaded, listed = asyncio.run(exercise())
+        self.assertEqual(loaded.checkpoint["channel_values"]["signal"], "async")
         self.assertEqual(len(listed), 1)

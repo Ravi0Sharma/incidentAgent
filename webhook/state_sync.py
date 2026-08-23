@@ -136,6 +136,10 @@ def sync_registry(
                         "-review.html",
                     )
                 ),
+                "review_stage": (
+                    "publish" if state.get("postmortem_draft") else "analysis"
+                ),
+                "postmortem_draft": state.get("postmortem_draft", ""),
                 "analysis_revision": analysis_revision,
                 "revision_diff": revision_diff,
                 "latest_event_id": latest_event_id,

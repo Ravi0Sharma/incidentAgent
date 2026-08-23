@@ -44,12 +44,25 @@ class DatabaseMigrationTests(unittest.TestCase):
             patch.object(migrate_database, "_ensure_ledger"),
             patch.object(migrate_database, "_is_applied", return_value=False),
             patch.object(migrate_database, "_apply_initial_schema") as apply_schema,
+            patch.object(
+                migrate_database,
+                "_apply_idempotent_job_effects_schema",
+            ) as apply_effects_schema,
+            patch.object(
+                migrate_database,
+                "_apply_publication_guard_schema",
+            ) as apply_publication_schema,
             patch.object(migrate_database, "_missing_runtime_tables", return_value=[]),
         ):
             result = migrate_database.apply_migrations()
 
-        self.assertEqual(result["applied"], [migrate_database.INITIAL_MIGRATION])
+        self.assertEqual(
+            result["applied"],
+            list(migrate_database.REQUIRED_MIGRATIONS),
+        )
         apply_schema.assert_called_once_with()
+        apply_effects_schema.assert_called_once_with()
+        apply_publication_schema.assert_called_once_with()
         executed = [call.args[0] for call in cursor.execute.call_args_list]
         self.assertTrue(any("GET_LOCK" in statement for statement in executed))
         self.assertTrue(any("INSERT INTO schema_migrations" in statement for statement in executed))
@@ -69,12 +82,25 @@ class DatabaseMigrationTests(unittest.TestCase):
             patch.object(migrate_database, "_ensure_ledger"),
             patch.object(migrate_database, "_is_applied", return_value=True),
             patch.object(migrate_database, "_apply_initial_schema") as apply_schema,
+            patch.object(
+                migrate_database,
+                "_apply_idempotent_job_effects_schema",
+            ) as apply_effects_schema,
+            patch.object(
+                migrate_database,
+                "_apply_publication_guard_schema",
+            ) as apply_publication_schema,
             patch.object(migrate_database, "_missing_runtime_tables", return_value=[]),
         ):
             result = migrate_database.apply_migrations()
 
-        self.assertEqual(result["already_applied"], [migrate_database.INITIAL_MIGRATION])
+        self.assertEqual(
+            result["already_applied"],
+            list(migrate_database.REQUIRED_MIGRATIONS),
+        )
         apply_schema.assert_not_called()
+        apply_effects_schema.assert_not_called()
+        apply_publication_schema.assert_not_called()
 
     def test_check_rejects_a_partial_schema_even_with_a_migration_ledger(self):
         connection = MagicMock()

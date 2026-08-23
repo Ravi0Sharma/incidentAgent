@@ -18,6 +18,11 @@ from settings import (
 )
 from utils.redaction import redact_data, redact_message
 from utils.render_safety import safe_report_path
+from webhook.incident_store import (
+    begin_publication,
+    complete_publication,
+    mark_publication_uncertain,
+)
 
 
 def _alertname(alert):
@@ -91,17 +96,34 @@ def publish(state):
 
     issue_url = None
     if PUBLISH_EXTERNAL:
-        slack.publish(
-            draft
-            + "\n\n"
-            + "_HTML report: "
-            + f"{html_path}_",
-            title=title
-        )
-        issue_url = github.create_postmortem(
-            title,
-            draft
-        )
+        publication = begin_publication(incident_id, draft)
+        if publication["status"] == "completed":
+            issue_url = publication.get("issue_url") or None
+        else:
+            try:
+                slack.publish(
+                    draft
+                    + "\n\n"
+                    + "_HTML report: "
+                    + f"{html_path}_",
+                    title=title
+                )
+                issue_url = github.create_postmortem(
+                    title,
+                    draft
+                )
+                complete_publication(
+                    publication["publication_key"],
+                    publication["attempt_token"],
+                    issue_url,
+                )
+            except Exception as exc:
+                mark_publication_uncertain(
+                    publication["publication_key"],
+                    publication["attempt_token"],
+                    exc,
+                )
+                raise
     else:
         print(
             "[publish] external publishing disabled; "
