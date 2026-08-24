@@ -51,6 +51,19 @@ def main():
         "runtime alert rules are incomplete",
     )
 
+    codeql = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
+    )
+    permissions = codeql.get("permissions", {})
+    _require(
+        permissions.get("actions") == "read",
+        "CodeQL needs actions: read to gather workflow-run metadata",
+    )
+    _require(
+        permissions.get("security-events") == "write",
+        "CodeQL needs security-events: write to upload SARIF",
+    )
+
     shadow = (ROOT / "config" / "shadow.env.example").read_text(encoding="utf-8")
     for required in (
         "PROCESS_ROLE=api",
