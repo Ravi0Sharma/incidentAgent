@@ -172,8 +172,18 @@ and record-level invariants are in
 | Publication approval | Bound to exact draft version and SHA-256 |
 | Aggregate publication | Durable at-most-once attempt guard; uncertainty blocks automatic retry |
 
-“Exactly once” is not claimed for arbitrary external providers. Provider-side
-idempotency and reconciliation remain destination-specific operational work.
+### High-volume incident bucketing
+
+Matching alerts share a 5-minute bucket. All events are saved, but each bucket
+keeps one pending analysis job and at most one follow-up while it runs.
+
+**100,000-event result (two workers + OpenAI):** 12 analysis jobs, 12
+successful OpenAI calls, 0 dead letters. After the 12-call incident budget is
+reached, later revisions use the deterministic fallback.
+
+The default Compose load test makes no external calls; opt in with
+`compose.openai-smoke.yaml` for real OpenAI calls.
+
 
 ## Main components
 
@@ -353,7 +363,7 @@ Important groups:
 | --- | --- | --- |
 | Runtime | `ENVIRONMENT`, `PROCESS_ROLE`, `SERVICE_VERSION` | Secure modes fail closed on unsupported combinations |
 | Database | `MYSQL_*`, `CHECKPOINTER`, `RUNTIME_SCHEMA_DDL_ENABLED` | API/worker roles have no DDL; migrator is separate |
-| Queue | `JOB_LEASE_SECONDS`, `MIN_ACTIVE_WORKERS`, `MAX_PENDING_JOBS` | Heartbeat and lease timings are validated |
+| Queue | `JOB_LEASE_SECONDS`, `MIN_ACTIVE_WORKERS`, `MAX_PENDING_JOBS`, `INCIDENT_BUCKET_SECONDS`, `INCIDENT_COALESCE_SECONDS`, `INCIDENT_COALESCE_MAX_SECONDS` | Heartbeat, lease, bucket and debounce timings are validated |
 | Intake | `WEBHOOK_SHARED_SECRET`, size/rate limits, tenant/environment allowlists | Reject before analysis when contract fails |
 | Sources | `LOG_SOURCE`, `METRIC_SOURCE`, connector URLs and limits | Source selection comes from deployment config, never alert fields |
 | Model | provider/model, retry, deadline, token and cost limits | Secure modes forbid missing hosted credentials or `SKIP_LLM=true` |
