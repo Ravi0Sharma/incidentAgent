@@ -222,7 +222,7 @@ running local API/workers first (named volumes are preserved), then starts only
 MySQL, the migrator and an isolated stress runner:
 
 ```bash
-docker compose down && docker compose --profile tools run --rm stress
+docker compose down && docker compose --profile tools run --build --rm stress
 ```
 
 The runner executes 20 cycles of 200 jobs with eight independent child workers
