@@ -52,6 +52,10 @@ class DatabaseMigrationTests(unittest.TestCase):
                 migrate_database,
                 "_apply_publication_guard_schema",
             ) as apply_publication_schema,
+            patch.object(
+                migrate_database,
+                "_apply_bucket_admission_schema",
+            ) as apply_bucket_schema,
             patch.object(migrate_database, "_missing_runtime_tables", return_value=[]),
         ):
             result = migrate_database.apply_migrations()
@@ -63,6 +67,7 @@ class DatabaseMigrationTests(unittest.TestCase):
         apply_schema.assert_called_once_with()
         apply_effects_schema.assert_called_once_with()
         apply_publication_schema.assert_called_once_with()
+        apply_bucket_schema.assert_called_once_with()
         executed = [call.args[0] for call in cursor.execute.call_args_list]
         self.assertTrue(any("GET_LOCK" in statement for statement in executed))
         self.assertTrue(any("INSERT INTO schema_migrations" in statement for statement in executed))
@@ -90,6 +95,10 @@ class DatabaseMigrationTests(unittest.TestCase):
                 migrate_database,
                 "_apply_publication_guard_schema",
             ) as apply_publication_schema,
+            patch.object(
+                migrate_database,
+                "_apply_bucket_admission_schema",
+            ) as apply_bucket_schema,
             patch.object(migrate_database, "_missing_runtime_tables", return_value=[]),
         ):
             result = migrate_database.apply_migrations()
@@ -101,6 +110,7 @@ class DatabaseMigrationTests(unittest.TestCase):
         apply_schema.assert_not_called()
         apply_effects_schema.assert_not_called()
         apply_publication_schema.assert_not_called()
+        apply_bucket_schema.assert_not_called()
 
     def test_check_rejects_a_partial_schema_even_with_a_migration_ledger(self):
         connection = MagicMock()

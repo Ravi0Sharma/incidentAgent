@@ -74,7 +74,7 @@ remain `ING-018` work.
 ## Lifecycle Boundary
 
 Firing alerts start analysis. A resolved alert locates the existing local
-incident by its fingerprint/service/start time and transitions an active or
+incident by its fingerprint/service/tenant/event-time bucket and transitions an active or
 completed lifecycle to `resolved`; an unknown resolution is recorded as such
 without creating analysis. Repeated resolved alerts are idempotent. Resolution
 does not publish a document or delete the immutable pending-review record, but
@@ -94,10 +94,20 @@ remains open.
 
 ## Queue, revisions, and dead letters
 
-The endpoint commits a redacted normalized event and a pending MySQL job in one
-transaction before returning `accepted`. A worker leases that job after the
-response and creates the analysis revision. Exact retries reuse the same event
-and do nothing; a genuine new event for the same incident creates another job.
+The endpoint commits every distinct redacted normalized event before returning
+success. Matching fingerprint/service/tenant observations share a fixed
+event-time incident bucket. The first observation creates a pending MySQL job;
+later observations update that job to the newest event while it remains
+pending and return `coalesced`. The sliding debounce has a hard maximum, so a
+continuous alert stream cannot postpone analysis indefinitely. If the worker
+has already leased the job, the next event creates one pending follow-up job
+without mutating the in-flight analysis. Exact retries reuse the same event and
+do nothing.
+
+A worker leases analysis only after the response and creates the revision. The
+admission transaction uses a per-incident row lock, yielding at most one leased
+and one pending analysis job per incident bucket while independent incidents
+remain concurrent. All accepted event rows remain available for audit.
 Workers that exhaust retry attempts enter a redacted MySQL dead-letter record;
 `POST /v1/dead-letters/{job_id}/replay` queues a safe analysis-only replay.
 

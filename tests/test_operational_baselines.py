@@ -61,6 +61,9 @@ def _production_config(**overrides):
         "MYSQL_POOL_SIZE": 8,
         "MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS": 5,
         "MIN_ACTIVE_WORKERS": 2,
+        "INCIDENT_BUCKET_SECONDS": 300,
+        "INCIDENT_COALESCE_SECONDS": 5,
+        "INCIDENT_COALESCE_MAX_SECONDS": 30,
         "MYSQL_SSL_ENABLED": True,
         "MYSQL_SSL_VERIFY_IDENTITY": True,
         "RUNTIME_SCHEMA_DDL_ENABLED": False,
@@ -235,6 +238,18 @@ class OperationalBaselineTests(unittest.TestCase):
             validate_runtime_config(_production_config(
                 WORKER_POLL_INTERVAL_SECONDS=1,
                 WORKER_HEARTBEAT_STALE_SECONDS=2,
+            ))
+
+    def test_secure_runtime_requires_a_bounded_coalescing_window(self):
+        with self.assertRaisesRegex(ValueError, "COALESCE_MAX_SECONDS"):
+            validate_runtime_config(_production_config(
+                INCIDENT_COALESCE_SECONDS=5,
+                INCIDENT_COALESCE_MAX_SECONDS=301,
+            ))
+        with self.assertRaisesRegex(ValueError, "COALESCE_MAX_SECONDS"):
+            validate_runtime_config(_production_config(
+                INCIDENT_COALESCE_SECONDS=5,
+                INCIDENT_COALESCE_MAX_SECONDS=4,
             ))
 
     def test_production_rejects_basic_review_auth_and_shared_session_secret(self):

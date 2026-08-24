@@ -16,7 +16,7 @@ authentication when reviewer credentials are configured.
 
 | Endpoint | Meaning | Success | Important errors |
 | --- | --- | --- | --- |
-| `POST /v1/alerts` | Validate, persist and enqueue one or more alerts | `200` with `accepted` event/job IDs | `400` malformed contract, `401` signature/replay, `413` limits, `429` intake limit |
+| `POST /v1/alerts` | Validate, persist and enqueue or coalesce one or more alerts | `200` with per-alert `accepted`, `coalesced`, or `duplicate_event` status | `400` malformed contract, `401` signature/replay, `413` limits, `429` intake limit, `503` queue capacity |
 | `POST /alerts` | Temporary compatibility alias for `/v1/alerts` | Same as v1 | Same as v1 |
 | `POST /alerts/{incident_id}/review` | Submit an approve/reject decision for a saved review revision | `200` | `409` stale/missing review revision |
 | `GET /alerts/{incident_id}/review/status` | Read review state | `200` | returns `awaiting_review: false` if absent |
@@ -27,11 +27,17 @@ authentication when reviewer credentials are configured.
 
 ## Intake semantics
 
-The response means the normalized event and its idempotency key were committed
-with a MySQL job in the same transaction. The worker creates the analysis
-revision after leasing the job; a request never waits for LLM analysis. Exact
-retries return `duplicate_event` and do not create a job. A new payload creates
-a new event and analysis job for the existing incident ID.
+An `accepted` response means the normalized event, idempotency key, and new
+MySQL job committed in one transaction. `coalesced` means the distinct event
+committed and the existing pending job atomically advanced to the newest event.
+Exact retries return `duplicate_event` and do not change the job. Matching
+events share a fixed incident time bucket, a bounded sliding debounce, and at
+most one pending job. An event received while analysis is leased creates one
+pending follow-up rather than changing the in-flight job.
+
+The worker creates the analysis revision after leasing the job; a request never
+waits for LLM analysis. Thus event volume remains durable without implying one
+model call per event.
 
 Every event retains `event_time`, `source_time`, `received_at`,
 `clock_quality`, and its monotonic database event ID. Timeline reads sort by

@@ -207,8 +207,10 @@ Supporting artifact: [`ALERT_INPUT_CONTRACT.md`](../contracts/ALERT_INPUT_CONTRA
   internal alert shape.
 - [x] `ING-002` Production webhook requests require an HMAC signature when a
   shared secret is configured.
-- [x] `ING-003` Incident IDs are reused for the same fingerprint, service, and
-  start time through a durable local mapping.
+- [x] `ING-003` Incident IDs are reused for the same fingerprint, service,
+  tenant, and fixed event-time bucket through a durable MySQL mapping.
+  Concurrent first observations recheck under the sequence lock and converge
+  on one mapping.
 - [x] `ING-004` A pending incident is protected from duplicate workflow starts
   by the local pending-review registry.
 - [x] `ING-005` `P0` Define and enforce a versioned Pydantic/JSON input schema.
@@ -259,8 +261,10 @@ Supporting artifact: [`ALERT_INPUT_CONTRACT.md`](../contracts/ALERT_INPUT_CONTRA
   remains open.
 - [x] `ING-011` `P0` Replace “deduplicated pending review” as the only update
   behavior with idempotent event ingestion. Exact retries do nothing; genuinely
-  new observations cause a new analysis revision through a distinct durable
-  job; `A02-T05` is covered by MySQL integration tests.
+  new observations are durably appended. Pending observations coalesce into the
+  newest event under a per-incident lock and bounded debounce; observations
+  arriving during a lease create one pending follow-up revision. The MySQL
+  integration suite covers sequential, leased, and concurrent burst paths.
 - [x] `ING-012` `P0` Preserve event time, source time, receive time, and clock
   quality separately. Out-of-order events are sorted by event time but retain
   arrival order for audit. `A02-T07` timeline-order coverage is in

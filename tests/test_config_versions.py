@@ -18,7 +18,7 @@ class ConfigVersionTests(unittest.TestCase):
             {
                 "detection_rules", "normalization", "suppressions",
                 "code_map", "service_registry", "cloudwatch_source_map",
-                "telemetry_route", "evidence_pack",
+                "telemetry_route", "incident_bucketing", "evidence_pack",
             },
         )
         self.assertTrue(first["manifest_sha256"].startswith("sha256:"))
@@ -39,6 +39,31 @@ class ConfigVersionTests(unittest.TestCase):
         self.assertNotEqual(first["manifest_sha256"], second["manifest_sha256"])
         for key in set(first["components"]) - {"code_map"}:
             self.assertEqual(first["components"][key], second["components"][key])
+
+    def test_incident_bucketing_is_content_addressed(self):
+        with patch.dict(
+            os.environ,
+            {
+                "INCIDENT_BUCKET_SECONDS": "300",
+                "INCIDENT_COALESCE_SECONDS": "5",
+                "INCIDENT_COALESCE_MAX_SECONDS": "30",
+            },
+        ):
+            first = config_version_manifest()
+        with patch.dict(
+            os.environ,
+            {
+                "INCIDENT_BUCKET_SECONDS": "600",
+                "INCIDENT_COALESCE_SECONDS": "10",
+                "INCIDENT_COALESCE_MAX_SECONDS": "60",
+            },
+        ):
+            second = config_version_manifest()
+        self.assertNotEqual(
+            first["components"]["incident_bucketing"],
+            second["components"]["incident_bucketing"],
+        )
+        self.assertNotEqual(first["manifest_sha256"], second["manifest_sha256"])
 
     def test_cloudwatch_source_map_and_route_are_content_addressed(self):
         with tempfile.TemporaryDirectory() as directory:

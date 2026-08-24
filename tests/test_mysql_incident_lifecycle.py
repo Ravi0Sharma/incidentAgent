@@ -3,6 +3,7 @@ import json
 import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from unittest.mock import patch
 
 import pymysql
@@ -15,8 +16,10 @@ from webhook.incident_store import (
     claim_next_job,
     complete_job,
     create_revision,
+    event_history_preview,
     enqueue_reprocessing,
     fail_job,
+    get_or_create_incident_id,
     list_dead_letters,
     list_events,
     record_event,
@@ -40,6 +43,7 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
         with registry._connection() as conn, conn.cursor() as cur:
             for incident_id in (self.incident_id, self.other_incident_id):
                 cur.execute("DELETE FROM incident_job_locks WHERE incident_id=%s", (incident_id,))
+                cur.execute("DELETE FROM incident_admission_locks WHERE incident_id=%s", (incident_id,))
                 cur.execute("DELETE FROM incident_dead_letters WHERE incident_id=%s", (incident_id,))
                 cur.execute("DELETE FROM incident_jobs WHERE incident_id=%s", (incident_id,))
                 cur.execute("DELETE FROM pending_reviews WHERE thread_id=%s", (incident_id,))
@@ -131,6 +135,178 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
         self.assertEqual(job["event_id"], late["event_id"])
         complete_job(job["job_id"], "test-worker")
 
+    def test_matching_events_share_one_pending_analysis_job(self):
+        first = record_event_and_enqueue(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "bucket-first").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatency", "service": "checkout"},
+        )
+        second = record_event_and_enqueue(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "bucket-second").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatency", "service": "checkout"},
+        )
+        self.assertTrue(first["queued"])
+        self.assertFalse(second["queued"])
+        self.assertTrue(second["coalesced"])
+        self.assertEqual(second["job_id"], first["job_id"])
+        self.assertEqual(len(list_events(self.incident_id)), 2)
+        job = claim_next_job("bucket-worker")
+        self.assertEqual(job["event_id"], second["event_id"])
+        complete_job(job["job_id"], "bucket-worker")
+
+    def test_concurrent_burst_creates_one_pending_analysis_job(self):
+        def enqueue(index):
+            return record_event_and_enqueue(
+                self.incident_id,
+                hashlib.sha256(
+                    f"{self.incident_id}:burst:{index}".encode()
+                ).hexdigest(),
+                "firing",
+                {"alertname": "HighLatency", "sequence": index},
+            )
+
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            results = list(executor.map(enqueue, range(40)))
+
+        self.assertEqual(sum(bool(item["queued"]) for item in results), 1)
+        self.assertEqual(sum(bool(item.get("coalesced")) for item in results), 39)
+        self.assertEqual(len({item["job_id"] for item in results}), 1)
+        self.assertEqual(len(list_events(self.incident_id)), 40)
+
+    def test_event_history_preview_stays_bounded_and_reports_total(self):
+        for index in range(5):
+            record_event(
+                self.incident_id,
+                hashlib.sha256(
+                    f"{self.incident_id}:preview:{index}".encode()
+                ).hexdigest(),
+                "firing",
+                {"alertname": "HighLatency", "sequence": index},
+            )
+        preview = event_history_preview(self.incident_id, limit=2)
+        self.assertEqual(preview["total"], 5)
+        self.assertTrue(preview["truncated"])
+        self.assertEqual(
+            [item["payload"]["sequence"] for item in preview["events"]],
+            [3, 4],
+        )
+
+    def test_matching_alerts_share_a_five_minute_incident_bucket(self):
+        fingerprint = "bucket-" + uuid.uuid4().hex
+        base = {
+            "fingerprint": fingerprint,
+            "service": "checkout",
+            "tenant_id": "tenant-a",
+        }
+        first = get_or_create_incident_id({
+            **base,
+            "started_at": "2026-08-24T10:01:00Z",
+        })
+        same_bucket = get_or_create_incident_id({
+            **base,
+            "started_at": "2026-08-24T10:04:59Z",
+        })
+        next_bucket = get_or_create_incident_id({
+            **base,
+            "started_at": "2026-08-24T10:05:00Z",
+        })
+        self.assertEqual(same_bucket, first)
+        self.assertNotEqual(next_bucket, first)
+        with registry._connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM incident_id_map WHERE incident_id IN (%s,%s)",
+                (first, next_bucket),
+            )
+            conn.commit()
+
+    def test_concurrent_first_alerts_converge_on_one_incident_id(self):
+        fingerprint = "incident-id-race-" + uuid.uuid4().hex
+        alert = {
+            "fingerprint": fingerprint,
+            "service": "checkout",
+            "tenant_id": "tenant-a",
+            "started_at": "2026-08-24T10:01:00Z",
+        }
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            incident_ids = list(
+                executor.map(lambda _: get_or_create_incident_id(alert), range(40))
+            )
+        self.assertEqual(len(set(incident_ids)), 1)
+        incident_id = incident_ids[0]
+        with registry._connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM incident_id_map WHERE incident_id=%s",
+                (incident_id,),
+            )
+            self.assertEqual(int(cur.fetchone()[0]), 1)
+            cur.execute(
+                "DELETE FROM incident_id_map WHERE incident_id=%s",
+                (incident_id,),
+            )
+            conn.commit()
+
+    def test_sliding_debounce_never_exceeds_hard_deadline(self):
+        with (
+            patch.object(incident_store, "INCIDENT_COALESCE_SECONDS", 10),
+            patch.object(incident_store, "INCIDENT_COALESCE_MAX_SECONDS", 30),
+        ):
+            first = record_event_and_enqueue(
+                self.incident_id,
+                hashlib.sha256((self.incident_id + "deadline-first").encode()).hexdigest(),
+                "firing",
+                {"alertname": "HighLatency"},
+            )
+            anchor = (
+                incident_store._mysql_datetime(incident_store._now())
+                - timedelta(seconds=29)
+            )
+            with registry._connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE incident_jobs SET created_at=%s WHERE job_id=%s",
+                    (anchor, first["job_id"]),
+                )
+                conn.commit()
+            second = record_event_and_enqueue(
+                self.incident_id,
+                hashlib.sha256((self.incident_id + "deadline-second").encode()).hexdigest(),
+                "firing",
+                {"alertname": "HighLatencyUpdated"},
+            )
+        self.assertTrue(second["coalesced"])
+        with registry._connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT available_at FROM incident_jobs WHERE job_id=%s",
+                (first["job_id"],),
+            )
+            available_at = cur.fetchone()[0]
+        self.assertEqual(available_at, anchor + timedelta(seconds=30))
+
+    def test_event_during_lease_creates_follow_up_analysis_job(self):
+        first = record_event_and_enqueue(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "leased-first").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatency"},
+        )
+        leased = claim_next_job("leased-worker")
+        self.assertEqual(leased["job_id"], first["job_id"])
+        follow_up = record_event_and_enqueue(
+            self.incident_id,
+            hashlib.sha256((self.incident_id + "leased-second").encode()).hexdigest(),
+            "firing",
+            {"alertname": "HighLatency"},
+        )
+        self.assertTrue(follow_up["queued"])
+        self.assertFalse(follow_up["coalesced"])
+        self.assertNotEqual(follow_up["job_id"], first["job_id"])
+        complete_job(leased["job_id"], "leased-worker")
+        next_job = claim_next_job("follow-up-worker")
+        self.assertEqual(next_job["job_id"], follow_up["job_id"])
+        complete_job(next_job["job_id"], "follow-up-worker")
+
     def test_alertmanager_zulu_timestamp_is_persisted_as_utc_datetime(self):
         event = record_event_and_enqueue(
             self.incident_id,
@@ -200,14 +376,14 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
             "firing",
             {"alertname": "HighLatency"},
         )
+        claimed = claim_next_job("worker-a", lease_seconds=120)
+        self.assertEqual(claimed["job_id"], first["job_id"])
         record_event_and_enqueue(
             self.incident_id,
             hashlib.sha256((self.incident_id + "second-job").encode()).hexdigest(),
             "firing",
             {"alertname": "HighLatencyUpdated"},
         )
-        claimed = claim_next_job("worker-a", lease_seconds=120)
-        self.assertEqual(claimed["job_id"], first["job_id"])
         self.assertIsNone(claim_next_job("worker-b", lease_seconds=120))
 
         renewed_until = renew_job_lease(first["job_id"], "worker-a", 180)
