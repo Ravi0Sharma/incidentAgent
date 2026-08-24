@@ -12,10 +12,15 @@ queue and LangGraph checkpointer.
 
 > **Current status:** the core is hardened and extensively tested for local
 > multi-process execution, retries, crash recovery, schema migration,
-> backup/restore and publication idempotency. The included Compose stack uses
-> synthetic data, disabled external connectors, no hosted LLM and
-> `PUBLISH_EXTERNAL=false`. It is safe for local evaluation; it is not by
-> itself evidence that an external environment is production-ready.
+> backup/restore and publication idempotency. The system supports real
+> Loki/Prometheus/CloudWatch/GitHub sources and the OpenAI Responses API; those
+> boundaries have also been evaluated with real public log data and bounded
+> live model calls. The shared `docker compose up --build` profile deliberately
+> disables external connectors and the hosted model, uses a synthetic canary,
+> and keeps `PUBLISH_EXTERNAL=false` so it remains safe and reproducible. Turn
+> on real integrations only through deployment-owned configuration and secrets;
+> doing so still requires the environment and operational controls in the
+> production checklist.
 
 ## Fastest start
 
