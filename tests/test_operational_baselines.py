@@ -1,5 +1,10 @@
 import asyncio
 import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -14,6 +19,9 @@ from webhook.api import (
     _review_resume_payload,
     review,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _production_config(**overrides):
@@ -94,6 +102,27 @@ def _production_config(**overrides):
 
 
 class OperationalBaselineTests(unittest.TestCase):
+    def test_api_import_creates_missing_static_output_directory(self):
+        with tempfile.TemporaryDirectory() as root:
+            output_dir = Path(root) / "new" / "output"
+            env = {
+                **os.environ,
+                "HTML_OUTPUT_DIR": str(output_dir),
+            }
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import webhook.api; from pathlib import Path; "
+                    "raise SystemExit(not Path(__import__('os').environ['HTML_OUTPUT_DIR']).is_dir())",
+                ],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_resolved_incident_blocks_an_old_review_decision(self):
         request = Mock(headers={})
         with patch(

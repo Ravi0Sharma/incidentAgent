@@ -706,9 +706,21 @@ async def review_logout(request: Request):
     request.session.clear()
     return JSONResponse({"status": "logged_out"})
 
+
+def _ensure_html_output_dir():
+    """Create the report directory before Starlette validates the static mount.
+
+    `output/` is intentionally ignored by Git, so a fresh CI checkout must not
+    depend on a directory created by an earlier local evaluation run.
+    """
+    output_dir = Path(HTML_OUTPUT_DIR)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
 app.mount(
     "/output",
-    StaticFiles(directory=HTML_OUTPUT_DIR),
+    StaticFiles(directory=str(_ensure_html_output_dir())),
     name="output"
 )
 
