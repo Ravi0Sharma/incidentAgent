@@ -424,17 +424,85 @@ Focused commands:
 .venv/bin/python scripts/validate_deploy_artifacts.py
 ```
 
-## Evaluation data
+## How the analysis system was developed and evaluated
 
-The repository includes synthetic scenarios and the public LogHub 2.0 sample
-datasets with provenance files. Evaluations cover grouping, evidence quality,
-impact assessment, deterministic generalization and bounded model behavior.
-Generated outputs remain under ignored `output/`; dated reviewed evidence is
-kept under `docs/reports/`.
+This repository does **not** train or fine-tune a foundation model. It combines
+deterministic incident-analysis code with an optional, bounded model call. The
+development loop improves contracts, normalization, evidence handling and
+prompts; it does not change model weights. A benchmark result below is evidence
+for a specific system boundary, not a claim that an LLM was trained on incident
+data.
 
-Public benchmark success does not prove target-environment performance. Before
-external use, run harmless incidents from every actual alert and evidence
-source and compare results with operator truth.
+### Where each part lives
+
+| Area | Folder(s) | Development and verification role |
+| --- | --- | --- |
+| System graph | `graph/`, `graph/nodes/`, `graph/state.py` | The checkpointed LangGraph flow: collection, normalization, correlation, interpretation, review and drafting. State and routing are tested independently and across process boundaries. |
+| Durable runtime | `webhook/`, `utils/mysql.py`, `graph/checkpointer.py` | MySQL event store, queue leases, revisions, review state and checkpoints. Tests cover multiple workers, transient deadlocks, process loss, recovery and backup/restore. |
+| Evidence and safety | `utils/`, `rules/`, `clients/` | Redaction, normalization, fingerprints, deterministic signals, bounded source adapters, grounding, budgets and output safety. |
+| Model boundary | `prompts/`, `utils/observability.py`, `clients/openai_client.py` | Versioned prompts and structured-output boundary. The model receives bounded redacted evidence and may abstain; it cannot publish or remediate. |
+| Scenarios and facit | `fixtures/`, `evaluation/`, `data/` | Synthetic contract scenarios and public-log adapters. Labels/fault metadata are held out until after deterministic processing and model output. |
+| Regression evidence | `tests/`, `scripts/`, `output/`, `docs/reports/` | Tests, repeatable scorecards, ignored generated JSON/HTML artifacts and reviewed dated reports. |
+
+Raw external logs and generated evaluation outputs are local operational data:
+they live under `data/` and ignored `output/`. Provenance, commands, thresholds
+and reviewed summaries live in `docs/reports/`. Ground truth is never inserted
+into alerts, candidate scoring, prompts or model requests; it is joined by the
+evaluator only after the result is frozen.
+
+### Development loop
+
+```text
+safe fixture/public raw logs
+        -> normalize + redact + infer groups
+        -> deterministic evidence and impact contracts
+        -> bounded, optional model interpretation
+        -> human-review artifact
+        -> join held-out labels and score
+        -> add a regression test or improve a general contract
+```
+
+The loop is intentionally conservative. A dataset-specific label is never
+turned into a hidden rule merely to raise a score. When evidence does not
+establish impact or causality, the expected safe result is an abstention.
+
+### Current verified signals
+
+Each value below has a narrow meaning; they must not be combined into one
+fictional “model accuracy” number.
+
+| Boundary | Current result | What it establishes |
+| --- | --- | --- |
+| Engineering quality gate | **335 tests**; **74.5%** whole-repository, **82.2%** core-path and **95.8%** security-path branch coverage | Code/regression coverage and local runtime behavior, not incident accuracy. |
+| HDFS 2k grouping | **100%** pair precision; **96.60%** recall; 14/14 source templates retained | Over-merging/fragmentation on one public corpus; template IDs are not incident causes. |
+| HDFS v3/TraceBench grouping | **100%** pair precision; **98.83%** recall; 75/75 labels retained | Generalization of normalized grouping; TraceBench labels are an upstream proxy. |
+| Curated BGL/OpenStack pair gate | **73/73** pairs; 100% precision, recall and specificity | A reviewed normalization contract boundary, not an independent human gold-set. |
+| Spark 2k parser/grouping | 2,000/2,000 parsed; **100%** precision; **98.91%** recall; **99.45%** F1 | Parser/grouping quality on an INFO-only sample; not failure detection or RCA. |
+| Hadoop typed pre-review | 100% grounding (55/55); 0 unknown evidence IDs; 0 unsupported predictions; 98.18% exact-or-honest-abstention | Label-last evidence/review boundary. Raw exact agreement is 32.73% because many supplied labels are absent from, or conflict with, recoverable evidence. |
+| Live model evaluation (2026-08-09) | 22 successful bounded calls; 0 unknown evidence IDs/unsupported percentages | Provider transport, structured output and abstention/grounding on limited cases; not production reliability or causal accuracy. |
+
+See the full methodology in
+[`PRE_REVIEW_EVALUATION.md`](docs/reports/PRE_REVIEW_EVALUATION.md),
+[`LOGHUB_2_EVALUATION_2026-08-09.md`](docs/reports/LOGHUB_2_EVALUATION_2026-08-09.md)
+and [`OPENAI_LIVE_EVALUATION_2026-08-09.md`](docs/reports/OPENAI_LIVE_EVALUATION_2026-08-09.md).
+
+### Reproducing the evidence
+
+Run the full code-quality gate, then the relevant label-last evaluator:
+
+```bash
+.venv/bin/python scripts/quality_gate.py
+.venv/bin/python scripts/evaluate_pre_review.py
+.venv/bin/python scripts/evaluate_hadoop_typed_review.py --cases 55 \\
+  --output output/hadoop-typed-review-all-55.json
+.venv/bin/python scripts/evaluate_spark_pilot.py --sample-limit 200 \\
+  --output output/spark-pilot.json
+```
+
+Public corpora have licensing/provenance requirements and may need separate
+fetching. Before external use, run harmless representative incidents from each
+real alert and evidence source, retain operator truth separately, and review
+abstentions and contradictions with responders.
 
 ## Production boundary
 
