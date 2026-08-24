@@ -88,6 +88,24 @@ or an untrusted webhook to become an autonomous operator. Its design goals are:
 - default to abstention and local drafts when evidence or dependencies fail;
 - prohibit automatic remediation.
 
+## Incident-response skills and real use cases
+
+The portable skills in [`skills/`](skills/README.md) give the agent and its
+operators a consistent incident-response playbook. They complement the
+durable workflow; they do not override its approval gates or allow automatic
+remediation.
+
+| Skill | Why it fits this project | Concrete use case |
+| --- | --- | --- |
+| [`agent-incident-responder`](skills/agent-incident-responder/SKILL.md) | Matches the system's human-in-the-loop, evidence-first and abstention-by-default design. | When the graph turns collected Loki, Prometheus and GitHub evidence into ranked, confidence-scored hypotheses for review. |
+| [`severity-classification`](skills/severity-classification/SKILL.md) | Ensures that incident impact is assessed consistently before escalation and review. | A broad customer-facing outage is classified as SEV-1/2 and routed to the full review process with the right urgency. |
+| [`alerting-principles`](skills/alerting-principles/SKILL.md) | Helps keep incoming alerts actionable and bounded, which improves evidence collection and reduces noise. | Reviewing a noisy alert rule to add affected service, customer impact, dashboard link and a clear next action. |
+| [`incident-runbook`](skills/incident-runbook/SKILL.md) | Connects the technical analysis with the people coordinating a live incident. | The reviewer uses the generated evidence trail to hand off status, assign roles and decide whether more evidence is needed. |
+| [`postmortem-writer`](skills/postmortem-writer/SKILL.md) | Fits the versioned postmortem-draft stage and its separate publication approval. | Turning an approved RCA, timeline and unknowns into a blameless draft that a human approves before publication. |
+| [`security-incident`](skills/security-incident/SKILL.md) | Adds a dedicated process when the evidence points to a possible security event. | A suspected credential leak or unauthorized access signal triggers containment and security-specific review rather than ordinary RCA only. |
+| [`anti-patterns`](skills/anti-patterns/SKILL.md) | Provides a process check against common failure modes in incident handling. | Reviewing a proposed response that skips ownership, hides uncertainty or treats an unverified hypothesis as fact. |
+
+
 ## End-to-end lifecycle
 
 1. **Authenticate and constrain intake.** The API bounds request size and
