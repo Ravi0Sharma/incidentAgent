@@ -1476,6 +1476,23 @@ async def alerts(request: Request, background_tasks: BackgroundTasks = None):
                 "status": "duplicate_event",
             })
             continue
+        if event.get("coalesced"):
+            increment("alerts", outcome="coalesced")
+            emit_log_event(
+                "alert_coalesced",
+                incident_id=normalized["incident_id"],
+                node="webhook",
+                request_id=request.headers.get("x-request-id"),
+                details={"event_id": event["event_id"], "job_id": event["job_id"]},
+            )
+            results.append({
+                "incident_id": normalized["incident_id"],
+                "alertname": normalized["alertname"],
+                "event_id": event["event_id"],
+                "job_id": event["job_id"],
+                "status": "coalesced",
+            })
+            continue
         increment("alerts", outcome="accepted")
         emit_log_event("alert_accepted", incident_id=normalized["incident_id"], node="webhook", request_id=request.headers.get("x-request-id"), details={"event_id": event["event_id"], "job_id": event["job_id"]})
         results.append({
@@ -1489,7 +1506,10 @@ async def alerts(request: Request, background_tasks: BackgroundTasks = None):
     if (
         API_DRAIN_JOBS
         and background_tasks
-        and any(result["status"] == "accepted" for result in results)
+        and any(
+            result["status"] in {"accepted", "coalesced"}
+            for result in results
+        )
     ):
         background_tasks.add_task(_drain_incident_jobs)
 

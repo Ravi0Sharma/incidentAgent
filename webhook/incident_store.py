@@ -10,6 +10,9 @@ import pymysql
 
 from settings import (
     ANALYSIS_CODE_VERSION,
+    INCIDENT_BUCKET_SECONDS,
+    INCIDENT_COALESCE_MAX_SECONDS,
+    INCIDENT_COALESCE_SECONDS,
     MYSQL_DATABASE,
     MYSQL_TABLE,
     MAX_PENDING_JOBS,
@@ -39,7 +42,8 @@ class PublicationStateUncertainError(RuntimeError):
     """An earlier external publication attempt cannot be safely retried."""
 
 
-REQUIRED_RUNTIME_MIGRATION = "20260824_03_publication_guard"
+PUBLICATION_GUARD_MIGRATION = "20260824_03_publication_guard"
+REQUIRED_RUNTIME_MIGRATION = "20260824_04_bucket_admission"
 TRANSIENT_LOCK_RETRIES = 8
 
 
@@ -224,6 +228,11 @@ def ensure_schema(*, allow_ddl=False):
             "last_error JSON NULL, completed_at DATETIME(6) NULL, created_at DATETIME(6) NOT NULL, "
             "updated_at DATETIME(6) NOT NULL, INDEX incident_jobs_claim (status,available_at,leased_until), "
             "INDEX incident_jobs_incident (incident_id,job_id))"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS incident_admission_locks ("
+            "incident_id VARCHAR(128) PRIMARY KEY, "
+            "updated_at DATETIME(6) NOT NULL)"
         )
         cur.execute(
             "CREATE TABLE IF NOT EXISTS incident_job_locks ("
@@ -473,7 +482,7 @@ def _insert_event(cur, incident_id, idempotency_key, event_type, payload, event_
 
 
 def get_or_create_incident_id(alert):
-    """Allocate retry-stable incident IDs atomically in shared MySQL."""
+    """Allocate one incident ID per fingerprint/service/time bucket."""
     alert = alert or {}
     supplied = str(alert.get("incident_id", ""))
     if supplied.startswith("INC-") and supplied[4:].isdigit() and len(supplied) >= 10:
@@ -483,11 +492,21 @@ def get_or_create_incident_id(alert):
         or alert.get("upstream_incident_id")
         or alert.get("alertname", "unknown")
     )
+    started_at = _mysql_datetime(alert.get("started_at"))
+    bucket_seconds = max(int(INCIDENT_BUCKET_SECONDS), 1)
+    if started_at is not None:
+        epoch = int(started_at.replace(tzinfo=timezone.utc).timestamp())
+        bucket_start = epoch - (epoch % bucket_seconds)
+        bucket_value = datetime.fromtimestamp(
+            bucket_start, timezone.utc
+        ).isoformat()
+    else:
+        bucket_value = str(alert.get("started_at", "unknown"))
     raw_key = "|".join(
         [
             str(fingerprint),
             str(alert.get("service", "unknown")),
-            str(alert.get("started_at", "unknown")),
+            bucket_value,
             str(alert.get("tenant_id", "unknown")),
         ]
     )
@@ -510,6 +529,17 @@ def get_or_create_incident_id(alert):
         if not sequence:
             conn.rollback()
             raise RuntimeError("incident ID sequence is not initialized")
+        # Another intake transaction may have created this mapping while this
+        # transaction waited for the sequence lock. Recheck under that lock so
+        # concurrent first observations converge without a duplicate-key race.
+        cur.execute(
+            "SELECT incident_id FROM incident_id_map WHERE incident_key=%s FOR UPDATE",
+            (incident_key,),
+        )
+        row = cur.fetchone()
+        if row:
+            conn.commit()
+            return row[0]
         value = int(sequence[0])
         incident_id = f"INC-{value:06d}"
         cur.execute(
@@ -574,6 +604,54 @@ def record_event_and_enqueue(incident_id, idempotency_key, event_type, payload, 
         if not inserted:
             conn.commit()
             return {"inserted": False, "event_id": event_id, "queued": False, "received_at": received_at.isoformat()}
+        # Serialize only this incident's admission decisions. Different
+        # buckets remain independently writable under burst load.
+        cur.execute(
+            "INSERT INTO incident_admission_locks (incident_id,updated_at) "
+            "VALUES (%s,%s) ON DUPLICATE KEY UPDATE "
+            "updated_at=VALUES(updated_at)",
+            (incident_id, now),
+        )
+        cur.execute(
+            "SELECT job_id,created_at FROM incident_jobs WHERE incident_id=%s "
+            "AND kind='analyze' AND status='pending' "
+            "ORDER BY job_id ASC LIMIT 1 FOR UPDATE",
+            (incident_id,),
+        )
+        existing_job = cur.fetchone()
+        if existing_job:
+            sliding_deadline = now + timedelta(
+                seconds=max(float(INCIDENT_COALESCE_SECONDS), 0.0)
+            )
+            created_at = existing_job[1]
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            hard_deadline = created_at + timedelta(
+                seconds=max(float(INCIDENT_COALESCE_MAX_SECONDS), 0.0)
+            )
+            available_at = min(sliding_deadline, hard_deadline)
+            cur.execute(
+                "UPDATE incident_jobs SET event_id=%s,payload=%s,"
+                "run_context=%s,available_at=%s,updated_at=%s "
+                "WHERE job_id=%s AND status='pending'",
+                (
+                    event_id,
+                    _json(payload),
+                    _json(complete_run_context(run_context)),
+                    available_at,
+                    now,
+                    int(existing_job[0]),
+                ),
+            )
+            conn.commit()
+            return {
+                "inserted": True,
+                "event_id": event_id,
+                "job_id": int(existing_job[0]),
+                "queued": False,
+                "coalesced": True,
+                "received_at": received_at.isoformat(),
+            }
         try:
             _assert_queue_capacity(cur, max_pending_jobs)
         except QueueCapacityError:
@@ -584,11 +662,20 @@ def record_event_and_enqueue(incident_id, idempotency_key, event_type, payload, 
             "INSERT INTO incident_jobs "
             "(job_key,incident_id,event_id,kind,status,available_at,payload,run_context,created_at,updated_at) "
             "VALUES (%s,%s,%s,'analyze','pending',%s,%s,%s,%s,%s)",
-            (key, incident_id, event_id, now, _json(payload), _json(complete_run_context(run_context)), now, now),
+            (
+                key,
+                incident_id,
+                event_id,
+                now + timedelta(seconds=max(float(INCIDENT_COALESCE_SECONDS), 0.0)),
+                _json(payload),
+                _json(complete_run_context(run_context)),
+                now,
+                now,
+            ),
         )
         job_id = cur.lastrowid
         conn.commit()
-    return {"inserted": True, "event_id": event_id, "job_id": job_id, "queued": True, "received_at": received_at.isoformat()}
+    return {"inserted": True, "event_id": event_id, "job_id": job_id, "queued": True, "coalesced": False, "received_at": received_at.isoformat()}
 
 
 def append_event(incident_id, idempotency_key, event_type, payload, event_time=None, source_time=None, clock_quality="unverified"):
@@ -1316,6 +1403,47 @@ def list_events(incident_id):
         }
         for row in rows
     ]
+
+
+def event_history_preview(incident_id, limit=200):
+    """Return a bounded latest-event preview and the durable total count.
+
+    Full event history remains queryable from ``incident_events``. Review-state
+    records must stay small enough to write and render during an alert storm.
+    """
+    limit = int(limit)
+    if limit <= 0:
+        raise ValueError("event history preview limit must be positive")
+    ensure_schema()
+    with _connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM incident_events WHERE incident_id=%s",
+            (incident_id,),
+        )
+        total = int(cur.fetchone()[0])
+        cur.execute(
+            "SELECT event_id,event_type,event_time,source_time,received_at,"
+            "clock_quality,payload FROM incident_events WHERE incident_id=%s "
+            "ORDER BY event_id DESC LIMIT %s",
+            (incident_id, limit),
+        )
+        rows = list(reversed(cur.fetchall()))
+    return {
+        "events": [
+            {
+                "event_id": row[0],
+                "event_type": row[1],
+                "event_time": row[2].isoformat() if row[2] else None,
+                "source_time": row[3].isoformat() if row[3] else None,
+                "received_at": row[4].isoformat(),
+                "clock_quality": row[5],
+                "payload": _decode(row[6]),
+            }
+            for row in rows
+        ],
+        "total": total,
+        "truncated": total > len(rows),
+    }
 
 
 def _claim_next_job_once(worker_id, lease_seconds=120):

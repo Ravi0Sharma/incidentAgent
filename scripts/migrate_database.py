@@ -27,11 +27,13 @@ from webhook import incident_store
 
 INITIAL_MIGRATION = "20260823_01_initial_runtime_schema"
 IDEMPOTENT_JOB_EFFECTS_MIGRATION = "20260824_02_idempotent_job_effects"
-PUBLICATION_GUARD_MIGRATION = incident_store.REQUIRED_RUNTIME_MIGRATION
+PUBLICATION_GUARD_MIGRATION = incident_store.PUBLICATION_GUARD_MIGRATION
+BUCKET_ADMISSION_MIGRATION = incident_store.REQUIRED_RUNTIME_MIGRATION
 REQUIRED_MIGRATIONS = (
     INITIAL_MIGRATION,
     IDEMPOTENT_JOB_EFFECTS_MIGRATION,
     PUBLICATION_GUARD_MIGRATION,
+    BUCKET_ADMISSION_MIGRATION,
 )
 MIGRATION_LOCK_NAME = "incident-agent-schema-migration"
 
@@ -51,6 +53,7 @@ def _expected_tables():
         "incident_review_decisions",
         "incident_postmortem_drafts",
         "incident_jobs",
+        "incident_admission_locks",
         "incident_job_locks",
         "incident_queue_control",
         "incident_workers",
@@ -137,6 +140,10 @@ def _apply_publication_guard_schema():
     incident_store.ensure_schema(allow_ddl=True)
 
 
+def _apply_bucket_admission_schema():
+    incident_store.ensure_schema(allow_ddl=True)
+
+
 def _record_migration(cur, migration_id):
     cur.execute(
         "INSERT INTO schema_migrations (migration_id,applied_at,applied_by) "
@@ -180,6 +187,14 @@ def apply_migrations():
                 _record_migration(cur, PUBLICATION_GUARD_MIGRATION)
                 conn.commit()
                 applied.append(PUBLICATION_GUARD_MIGRATION)
+
+            if _is_applied(conn, BUCKET_ADMISSION_MIGRATION):
+                already_applied.append(BUCKET_ADMISSION_MIGRATION)
+            else:
+                _apply_bucket_admission_schema()
+                _record_migration(cur, BUCKET_ADMISSION_MIGRATION)
+                conn.commit()
+                applied.append(BUCKET_ADMISSION_MIGRATION)
 
             missing = _missing_runtime_tables(conn)
             if missing:

@@ -152,6 +152,10 @@ def _cleanup(incident_prefix, checkpoint_thread):
             (incident_prefix + "%",),
         )
         cursor.execute(
+            "DELETE FROM incident_admission_locks WHERE incident_id LIKE %s",
+            (incident_prefix + "%",),
+        )
+        cursor.execute(
             "DELETE FROM incident_dead_letters WHERE incident_id LIKE %s",
             (incident_prefix + "%",),
         )
@@ -231,9 +235,11 @@ def run_probe(*, jobs=32, workers=4):
             )
 
         for index in range(jobs):
-            # Reuse a few incident ids as well as unique ids. This verifies
-            # per-incident serialization while allowing cross-incident work.
-            incident_id = incident_prefix + f"LOAD-{index % max(4, workers)}"
+            # Use unique incidents so this probe measures cross-incident
+            # worker concurrency. Same-incident admission and serialization
+            # are covered by the MySQL lifecycle tests; pending events for one
+            # incident now intentionally coalesce into one analysis job.
+            incident_id = incident_prefix + f"LOAD-{index}"
             _enqueue(incident_id, index)
 
         start_at = time.time() + 0.5

@@ -69,6 +69,17 @@ def config_version_manifest():
             "metric_source": os.getenv("METRIC_SOURCE", "prometheus").strip().lower(),
             "cloudwatch_region": os.getenv("CLOUDWATCH_REGION", "").strip(),
         }),
+        "incident_bucketing": _digest_object({
+            "bucket_seconds": int(
+                os.getenv("INCIDENT_BUCKET_SECONDS", "300")
+            ),
+            "coalesce_seconds": float(
+                os.getenv("INCIDENT_COALESCE_SECONDS", "0")
+            ),
+            "coalesce_max_seconds": float(
+                os.getenv("INCIDENT_COALESCE_MAX_SECONDS", "30")
+            ),
+        }),
         "evidence_pack": "evidence-pack/v3",
     }
     serialized = json.dumps(

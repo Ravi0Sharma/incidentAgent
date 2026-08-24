@@ -207,6 +207,29 @@ def validate_runtime_config(config):
         )
     if int(getattr(config, "MAX_PENDING_JOBS", 1000)) <= 0:
         errors.append(f"MAX_PENDING_JOBS must be positive in {mode}")
+    bucket_seconds = int(getattr(config, "INCIDENT_BUCKET_SECONDS", 300))
+    coalesce_seconds = float(
+        getattr(config, "INCIDENT_COALESCE_SECONDS", 0)
+    )
+    coalesce_max_seconds = float(
+        getattr(config, "INCIDENT_COALESCE_MAX_SECONDS", 30)
+    )
+    if bucket_seconds <= 0:
+        errors.append(f"INCIDENT_BUCKET_SECONDS must be positive in {mode}")
+    if coalesce_seconds <= 0 or coalesce_seconds >= bucket_seconds:
+        errors.append(
+            "INCIDENT_COALESCE_SECONDS must be positive and less than "
+            f"INCIDENT_BUCKET_SECONDS in {mode}"
+        )
+    if (
+        coalesce_max_seconds < coalesce_seconds
+        or coalesce_max_seconds > bucket_seconds
+    ):
+        errors.append(
+            "INCIDENT_COALESCE_MAX_SECONDS must be at least "
+            "INCIDENT_COALESCE_SECONDS and at most "
+            f"INCIDENT_BUCKET_SECONDS in {mode}"
+        )
     if int(getattr(config, "MIN_ACTIVE_WORKERS", 0)) < 2:
         errors.append(f"MIN_ACTIVE_WORKERS must be at least 2 in {mode}")
     log_source = str(

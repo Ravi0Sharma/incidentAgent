@@ -1,7 +1,7 @@
 from webhook import registry
 from webhook.incident_store import (
+    event_history_preview,
     get_analysis_revision_diff,
-    list_events,
     record_analysis_revision,
 )
 
@@ -41,6 +41,7 @@ def sync_registry(
             analysis_revision,
         )
     if is_awaiting_review(state):
+        history_preview = event_history_preview(thread_id)
         registry.add_pending(
             thread_id,
             {
@@ -143,7 +144,9 @@ def sync_registry(
                 "analysis_revision": analysis_revision,
                 "revision_diff": revision_diff,
                 "latest_event_id": latest_event_id,
-                "event_history": list_events(thread_id),
+                "event_history": history_preview["events"],
+                "event_history_total": history_preview["total"],
+                "event_history_truncated": history_preview["truncated"],
             },
             expected_version=expected_pending_version,
         )
