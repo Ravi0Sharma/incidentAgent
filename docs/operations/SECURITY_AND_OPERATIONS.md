@@ -49,7 +49,10 @@ multi-worker dashboards and alerts.
 The OIDC/RBAC/CSRF boundary is implemented locally but still requires a real
 identity-provider registration and staging security test. Hash-locked Python
 dependencies, repository secret scanning, dependency audit and CycloneDX SBOM
-generation and CodeQL now run in CI. The durable MySQL queue, renewable
+generation now run in CI. A scheduled dependency-security workflow preserves
+the audit/SBOM evidence without uploading CodeQL results to GitHub Code
+Scanning, which requires GitHub Advanced Security for this private repository.
+The durable MySQL queue, renewable
 job/incident leases, worker heartbeat, bounded admission, dead-letter path,
 role-aware pooling, versioned migrations, egress allowlisting and repeatable
 backup/restore drill are implemented locally. Publication requires separate

@@ -1,0 +1,42 @@
+name: dependency-security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  audit-python-dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install locked dependencies
+        run: |
+          python -m pip install pip==26.1.2 setuptools==84.0.0
+          python -m pip install --require-hashes -r requirements.lock
+      - name: Audit locked Python dependencies
+        run: pip-audit -r requirements.lock --require-hashes --format json --output pip-audit.json
+      - name: Generate CycloneDX SBOM
+        if: always()
+        run: cyclonedx-py environment --output-format JSON --output-file sbom.json
+      - name: Upload security evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-security-evidence
+          path: |
+            pip-audit.json
+            sbom.json
+          if-no-files-found: warn
+          retention-days: 30

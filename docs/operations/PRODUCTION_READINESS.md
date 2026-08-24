@@ -37,7 +37,8 @@ sync and async paths with immutable conflict detection. Real exec-process tests
 exercise concurrent workers, per-incident serialization, unique worker
 identities, durable results, SIGKILL lease recovery and job-keyed idempotent
 revisions. CI repeats load/race probes, logical backup/isolated restore with
-readable canaries, migration checks, SBOM/dependency audit and CodeQL. A second
+readable canaries, migration checks, SBOM/dependency audit and a scheduled
+dependency-security evidence run. A second
 exact-draft interrupt now precedes external publishing, which uses a durable
 at-most-once attempt guard and blocks ambiguous retries. Managed-environment
 failover, real provider contracts, per-destination publication recovery and

@@ -401,7 +401,9 @@ The gate performs:
 
 CI additionally runs four-worker process/SIGKILL tests, repeated resilience
 soak, isolated backup/restore, deploy artifact validation, dependency audit,
-SBOM generation, CodeQL and a real Compose build/start/two-worker E2E canary.
+SBOM generation, scheduled dependency-security evidence and a real Compose
+build/start/two-worker E2E canary. GitHub-hosted Code Scanning is deliberately
+not used while this private repository does not have GitHub Advanced Security.
 
 Focused commands:
 

@@ -51,17 +51,23 @@ def main():
         "runtime alert rules are incomplete",
     )
 
-    codeql = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
+    security_workflow_path = ROOT / ".github" / "workflows" / "dependency-security.yml"
+    security_workflow = yaml.safe_load(
+        security_workflow_path.read_text(encoding="utf-8")
     )
-    permissions = codeql.get("permissions", {})
+    permissions = security_workflow.get("permissions", {})
     _require(
-        permissions.get("actions") == "read",
-        "CodeQL needs actions: read to gather workflow-run metadata",
+        permissions.get("contents") == "read",
+        "dependency security workflow needs read-only repository contents",
+    )
+    security_workflow_source = security_workflow_path.read_text(encoding="utf-8")
+    _require(
+        "pip-audit -r requirements.lock --require-hashes" in security_workflow_source,
+        "dependency security workflow must audit the hash-locked requirements",
     )
     _require(
-        permissions.get("security-events") == "write",
-        "CodeQL needs security-events: write to upload SARIF",
+        "github/codeql-action" not in security_workflow_source,
+        "private repositories without GHAS must not run CodeQL Action",
     )
 
     shadow = (ROOT / "config" / "shadow.env.example").read_text(encoding="utf-8")
