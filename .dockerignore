@@ -19,6 +19,7 @@ data
 docs
 docker
 compose.yaml
+.gitlab-ci.yml
 *.md
 mysql_sim.log
 *.pyc

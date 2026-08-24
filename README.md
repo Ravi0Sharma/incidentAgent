@@ -244,6 +244,15 @@ python3.11 -m venv .venv
 cp .env.example .env
 ```
 
+Phoenix is optional and intentionally excluded from the server image because a
+transitive package is not published for every Linux target. To use
+`scripts/start_phoenix.py` on a supported developer workstation, install its
+extra dependencies separately:
+
+```bash
+.venv/bin/python -m pip install -r requirements-observability.txt
+```
+
 Create the configured MySQL database, then apply migrations under the migrator
 role:
 

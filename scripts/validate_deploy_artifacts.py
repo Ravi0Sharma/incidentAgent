@@ -70,6 +70,19 @@ def main():
         "private repositories without GHAS must not run CodeQL Action",
     )
 
+    gitlab_path = ROOT / ".gitlab-ci.yml"
+    gitlab = yaml.safe_load(gitlab_path.read_text(encoding="utf-8"))
+    _require(
+        gitlab.get("stages") == ["verify", "security", "container"],
+        "GitLab CI stages are incomplete",
+    )
+    for job_name in ("python-quality", "dependency-security", "compose-e2e"):
+        _require(job_name in gitlab, f"GitLab CI job is missing: {job_name}")
+    _require(
+        gitlab["compose-e2e"].get("tags") == ["docker-dind"],
+        "GitLab Compose E2E must target the dedicated Docker-in-Docker runner",
+    )
+
     shadow = (ROOT / "config" / "shadow.env.example").read_text(encoding="utf-8")
     for required in (
         "PROCESS_ROLE=api",

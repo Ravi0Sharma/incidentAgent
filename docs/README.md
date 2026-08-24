@@ -27,6 +27,7 @@ from planning history and dated evidence.
 ## Operations
 
 - [`LOCAL_DOCKER_COMPOSE.md`](operations/LOCAL_DOCKER_COMPOSE.md) — zero-setup local stack and E2E checklist.
+- [`GITLAB_CI.md`](operations/GITLAB_CI.md) — GitLab pipeline and runner prerequisites.
 - [`SETUP_GUIDE.md`](operations/SETUP_GUIDE.md) — native Python and environment setup.
 - [`OPERATOR_RUNBOOKS.md`](operations/OPERATOR_RUNBOOKS.md) — migrations, recovery, queue and publication incidents.
 - [`PRODUCTION_READINESS.md`](operations/PRODUCTION_READINESS.md) — authoritative production Definition of Done.

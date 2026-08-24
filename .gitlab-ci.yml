@@ -1,0 +1,106 @@
+stages:
+  - verify
+  - security
+  - container
+
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_CACHE_DIR: "1"
+
+python-quality:
+  stage: verify
+  image: python:3.11.15-slim-bookworm
+  services:
+    - name: mysql:8.4
+      alias: mysql
+      variables:
+        MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+        MYSQL_DATABASE: incident_agent
+  variables:
+    CHECKPOINTER: mysql
+    PROCESS_ROLE: api
+    MYSQL_HOST: mysql
+    MYSQL_PORT: "3306"
+    MYSQL_DATABASE: incident_agent
+    MYSQL_USER: root
+    MYSQL_API_USER: root
+    MYSQL_MIGRATOR_USER: root
+    RUNTIME_SCHEMA_DDL_ENABLED: "false"
+    SKIP_LLM: "true"
+    OPENAI_API_KEY: test-provider-key
+    PUBLISH_EXTERNAL: "false"
+    PHOENIX_ENABLED: "false"
+  before_script:
+    - apt-get update
+    - apt-get install --yes --no-install-recommends default-mysql-client
+    - python -m pip install pip==26.1.2 setuptools==84.0.0
+    - python -m pip install --require-hashes -r requirements.lock
+    - |
+      for attempt in $(seq 1 30); do
+        mysqladmin ping --host=mysql --user=root --silent && break
+        sleep 2
+      done
+      mysqladmin ping --host=mysql --user=root --silent
+  script:
+    - PROCESS_ROLE=migrator RUNTIME_SCHEMA_DDL_ENABLED=false python scripts/migrate_database.py apply
+    - PROCESS_ROLE=migrator RUNTIME_SCHEMA_DDL_ENABLED=false python scripts/migrate_database.py check
+    - python scripts/quality_gate.py
+    - python scripts/verify_distributed_runtime.py --jobs 64 --workers 4 | tee distributed-runtime.json
+    - python scripts/run_resilience_soak.py --cycles 2 --jobs-per-cycle 40 --workers 4 | tee resilience-soak.json
+    - PROCESS_ROLE=migrator python scripts/verify_backup_restore.py | tee backup-restore.json
+    - cyclonedx-py environment --output-format JSON --output-file sbom.json
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - .coverage
+      - sbom.json
+      - distributed-runtime.json
+      - resilience-soak.json
+      - backup-restore.json
+
+dependency-security:
+  stage: security
+  image: python:3.11.15-slim-bookworm
+  before_script:
+    - python -m pip install pip==26.1.2 setuptools==84.0.0
+    - python -m pip install --require-hashes -r requirements.lock
+  script:
+    - pip-audit -r requirements.lock --require-hashes --format json --output pip-audit.json
+    - cyclonedx-py environment --output-format JSON --output-file sbom.json
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - pip-audit.json
+      - sbom.json
+
+compose-e2e:
+  stage: container
+  image: docker:27.5.1-cli
+  services:
+    - name: docker:27.5.1-dind
+      alias: docker
+  tags:
+    - docker-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - docker info
+    - docker compose version
+  script:
+    - docker compose config --quiet
+    - docker compose build --pull
+    - docker compose up --no-build --wait
+    - docker compose --profile tools run --rm --no-deps verify
+  after_script:
+    - docker compose ps || true
+    - docker compose logs --no-color > compose-e2e.log || true
+    - docker compose down --volumes || true
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - compose-e2e.log
+

@@ -3,9 +3,13 @@ import json
 import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
+
+import pymysql
 
 from webhook import registry
 from webhook import rate_limit
+from webhook import incident_store
 from webhook.incident_store import (
     QueueCapacityError,
     claim_next_job,
@@ -59,6 +63,18 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
         state = registry.transition_lifecycle(self.incident_id, "collecting", expected_version=1)
         self.assertEqual(state["status"], "collecting")
         self.assertEqual(registry.get_lifecycle(self.incident_id)["version"], 2)
+
+    def test_job_claim_retries_a_transient_mysql_deadlock(self):
+        expected = {"job_id": 17, "incident_id": self.incident_id}
+        deadlock = pymysql.err.OperationalError(1213, "deadlock")
+        with patch.object(
+            incident_store,
+            "_claim_next_job_once",
+            side_effect=[deadlock, expected],
+        ) as claim_once, patch.object(incident_store.time, "sleep") as sleep:
+            self.assertEqual(claim_next_job("retry-worker"), expected)
+        self.assertEqual(claim_once.call_count, 2)
+        sleep.assert_called_once_with(0.01)
 
     def test_stale_writer_cannot_overwrite_pending_review_or_lifecycle(self):
         pending = registry.add_pending(self.incident_id, {"alertname": "HighLatency"})

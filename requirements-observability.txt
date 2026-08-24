@@ -1,0 +1,8 @@
+# Optional local observability tooling. This is deliberately separate from the
+# server runtime: Phoenix includes platform-specific packages that are not
+# available on every Linux target. Install it only on a supported developer
+# workstation when running scripts/start_phoenix.py.
+arize-phoenix>=18.0.0
+arize-phoenix-otel>=0.16.0
+openinference-instrumentation-langchain>=0.1.60
+openinference-instrumentation-openai>=0.1.50

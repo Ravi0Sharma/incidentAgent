@@ -1,5 +1,10 @@
 -r requirements.txt
 
+# pip-api (used by pip-audit) depends on pip. Pin it explicitly so the
+# hash-locked install remains valid in minimal CI and Docker images.
+pip==26.1.2
+setuptools==84.0.0
+
 coverage==7.10.6
 cyclonedx-bom==7.3.1
 mypy==1.17.1

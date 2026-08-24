@@ -1317,7 +1317,7 @@ def list_events(incident_id):
     ]
 
 
-def claim_next_job(worker_id, lease_seconds=120):
+def _claim_next_job_once(worker_id, lease_seconds=120):
     """Lease one job and its incident so revisions cannot run concurrently."""
     ensure_schema()
     now = _now()
@@ -1368,6 +1368,25 @@ def claim_next_job(worker_id, lease_seconds=120):
             }
         conn.commit()
         return None
+
+
+def claim_next_job(worker_id, lease_seconds=120):
+    """Lease one job, retrying transient InnoDB lock conflicts.
+
+    `SKIP LOCKED` keeps independent jobs moving, but two workers can still
+    deadlock briefly while creating or taking the per-incident lease row. A
+    transaction rollback leaves no partial claim, so retrying the complete
+    claim preserves at-most-one active owner for each incident.
+    """
+    for attempt in range(3):
+        try:
+            return _claim_next_job_once(worker_id, lease_seconds=lease_seconds)
+        except pymysql.err.OperationalError as exc:
+            error_code = exc.args[0] if exc.args else None
+            if error_code not in {1205, 1213} or attempt == 2:
+                raise
+            time.sleep(0.01 * (attempt + 1))
+    raise AssertionError("unreachable job claim retry state")
 
 
 def renew_job_lease(job_id, worker_id, lease_seconds=120):
