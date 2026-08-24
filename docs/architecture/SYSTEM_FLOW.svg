@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2300" viewBox="0 0 1600 2300" role="img" aria-labelledby="title desc">
   <title id="title">Incident Agent workflow</title>
-  <desc id="desc">A vertical workflow showing intake, MySQL queue, parallel evidence gathering, analysis, human review and local postmortem draft, with feedback loops.</desc>
+  <desc id="desc">The local incident workflow: signed alert, MySQL-backed queue and two workers, bounded evidence gathering, optional OpenAI interpretation, human review, local draft, metrics and optional Phoenix traces.</desc>
   <defs>
     <style>
       .bg{fill:#050505}.card{fill:#f5f3ee;stroke:#bbb8b0;stroke-width:3}.store{fill:#e8f1ff;stroke:#6d9df5;stroke-width:3}.ai{fill:#eceaff;stroke:#7770ea;stroke-width:3}.human{fill:#fff0d5;stroke:#d99020;stroke-width:3}.danger{fill:#ffe9e7;stroke:#e25b52;stroke-width:3}.disabled{fill:#1d1d1d;stroke:#777;stroke-width:3;stroke-dasharray:9 7}.box{rx:22}.h{fill:#383838;font:700 31px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-anchor:middle}.p{fill:#666;font:400 22px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-anchor:middle}.small{fill:#777;font:400 18px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-anchor:middle}.light{fill:#aaa;font:400 20px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.legend{fill:#aaa;font:600 20px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.line{stroke:#aaa;stroke-width:4;fill:none;marker-end:url(#arrow)}.loop{stroke:#b7b7b7;stroke-width:4;fill:none;marker-end:url(#arrow)}.badline{stroke:#e25b52;stroke-width:4;fill:none;marker-end:url(#badarrow)}.dash{stroke:#888;stroke-width:4;stroke-dasharray:10 8;fill:none;marker-end:url(#arrow)}
@@ -11,12 +11,12 @@
 
   <rect class="bg" width="1600" height="2300"/>
   <text x="800" y="55" fill="#f5f3ee" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="34" font-weight="700" text-anchor="middle">Incident Agent — actual POC workflow</text>
-  <text x="800" y="85" class="light" text-anchor="middle">Durable MySQL intake · bounded evidence analysis · human decision support</text>
+  <text x="800" y="85" class="light" text-anchor="middle">Local Compose: MySQL + API + two workers · bounded evidence · human decision</text>
 
   <!-- Intake -->
   <rect class="card box" x="490" y="125" width="620" height="115"/>
   <text class="h" x="800" y="172">Alert webhook (trigger)</text>
-  <text class="p" x="800" y="207">Grafana / Alertmanager today · CloudWatch adapter planned</text>
+  <text class="p" x="800" y="207">signed synthetic alert today · CloudWatch logs later</text>
 
   <path class="line" d="M800 240 V295"/>
   <rect class="card box" x="490" y="295" width="620" height="135"/>
@@ -27,8 +27,8 @@
   <path class="line" d="M800 430 V485"/>
   <rect class="store box" x="490" y="485" width="620" height="145"/>
   <text class="h" x="800" y="533">persist event + enqueue job</text>
-  <text class="p" x="800" y="566">MySQL incident_events + incident_jobs in one transaction</text>
-  <text class="small" x="800" y="596">idempotency · event/source/receive time · redaction</text>
+  <text class="p" x="800" y="566">MySQL event + bucketed analysis job in one transaction</text>
+  <text class="small" x="800" y="596">all events saved · one pending job + one follow-up · redaction</text>
 
   <path class="line" d="M800 630 V685"/>
   <rect class="store box" x="490" y="685" width="620" height="125"/>
@@ -39,7 +39,7 @@
   <!-- Worker -->
   <path class="line" d="M800 810 V865"/>
   <rect class="store box" x="490" y="865" width="620" height="125"/>
-  <text class="h" x="800" y="913">worker lease + new analysis revision</text>
+  <text class="h" x="800" y="913">two workers lease + create analysis revision</text>
   <text class="p" x="800" y="946">one MySQL lease owner · checkpoint · lifecycle · run context</text>
   <text class="small" x="800" y="972">transient retry · terminal/exhausted → dead letter</text>
 
@@ -47,14 +47,14 @@
   <path class="line" d="M800 990 V1045"/>
   <rect class="card box" x="490" y="1045" width="620" height="118"/>
   <text class="h" x="800" y="1091">ingest_alert → plan_collection</text>
-  <text class="p" x="800" y="1124">time window · scope · bounded evidence plan</text>
+  <text class="p" x="800" y="1124">time window · scope · severity-aware evidence budget</text>
 
   <!-- Parallel gathering -->
   <path class="line" d="M800 1163 V1210 H300 V1260"/>
   <path class="line" d="M800 1163 V1260"/>
   <path class="line" d="M800 1163 V1210 H1300 V1260"/>
   <rect class="card box" x="105" y="1260" width="390" height="125"/>
-  <text class="h" x="300" y="1308">gather_logs</text><text class="p" x="300" y="1340">bounded log query</text><text class="small" x="300" y="1365">provenance + redaction</text>
+  <text class="h" x="300" y="1308">gather_logs</text><text class="p" x="300" y="1340">bounded log query</text><text class="small" x="300" y="1365">local now · CloudWatch later</text>
   <rect class="card box" x="605" y="1260" width="390" height="125"/>
   <text class="h" x="800" y="1308">gather_metrics</text><text class="p" x="800" y="1340">bounded metric query</text><text class="small" x="800" y="1365">quality + source status</text>
   <rect class="card box" x="1105" y="1260" width="390" height="125"/>
@@ -75,8 +75,8 @@
   <path class="line" d="M800 1595 V1650"/>
   <rect class="ai box" x="490" y="1650" width="620" height="135"/>
   <text class="h" x="800" y="1698" fill="#49439e">interpret_incident</text>
-  <text class="p" x="800" y="1731" fill="#5550ac">bounded LLM synthesis over selected evidence only</text>
-  <text class="small" x="800" y="1758">grounding/quality gate · deterministic/degraded fallback</text>
+  <text class="p" x="800" y="1731" fill="#5550ac">OpenAI only with compose.openai.yaml; selected redacted evidence</text>
+  <text class="small" x="800" y="1758">grounding/quality gate · no-cost run uses deterministic fallback</text>
 
   <!-- Review -->
   <path class="line" d="M800 1785 V1840"/>
@@ -109,6 +109,14 @@
   <text x="215" y="1888" fill="#ddd" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="28" font-weight="700" text-anchor="middle">Not in POC</text>
   <text class="small" x="215" y="1921" fill="#bbb">external Slack/GitHub/GitLab</text><text class="small" x="215" y="1947" fill="#bbb">ticket creation · remediation</text><text class="small" x="215" y="1973" fill="#bbb">all external publishing disabled</text>
   <path class="dash" d="M490 2098 H365"/>
+
+  <!-- Observability -->
+  <rect class="store box" x="65" y="1610" width="300" height="145"/>
+  <text class="h" x="215" y="1655">See the run</text>
+  <text class="p" x="215" y="1687">API + worker metrics</text>
+  <text class="small" x="215" y="1715">Grafana import after Prometheus</text>
+  <text class="small" x="215" y="1740">Phoenix: optional local traces</text>
+  <path class="dash" d="M490 1700 H365"/>
 
   <!-- Legend -->
   <rect class="card box" x="190" y="2285" width="24" height="24"/><text class="legend" x="225" y="2305">deterministic / storage</text>

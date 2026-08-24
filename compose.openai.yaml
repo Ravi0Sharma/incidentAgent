@@ -1,32 +1,32 @@
-# Opt-in only: use with `docker compose -f compose.yaml -f compose.openai-smoke.yaml`.
+# Use with `docker compose -f compose.yaml -f compose.openai.yaml`.
 # Values come from .env at runtime; no credential is stored in this file.
-x-openai-smoke-environment: &openai-smoke-environment
+x-openai-environment: &openai-environment
   MODEL_ENABLED: "true"
   SKIP_LLM: "false"
   OPENAI_BASE_URL: "${OPENAI_BASE_URL:?OPENAI_BASE_URL must be set}"
   OPENAI_API_KEY: "${OPENAI_API_KEY:?OPENAI_API_KEY must be set}"
   OPENAI_MODEL: "${OPENAI_MODEL:?OPENAI_MODEL must be set}"
   EGRESS_ALLOWED_HOSTS: "api.openai.com"
-  # Keep the external smoke test bounded independently of local-model settings.
+  # Keep the real-provider run bounded independently of local-model settings.
   LLM_TIMEOUT_SECONDS: "90"
   LLM_RETRY_ATTEMPTS: "1"
 
 services:
   api:
     environment:
-      <<: *openai-smoke-environment
+      <<: *openai-environment
   worker-1:
     environment:
-      <<: *openai-smoke-environment
+      <<: *openai-environment
   worker-2:
     environment:
-      <<: *openai-smoke-environment
+      <<: *openai-environment
   stress:
     environment:
-      <<: *openai-smoke-environment
+      <<: *openai-environment
 
-# The base local stack is intentionally isolated. This opt-in override allows
-# model requests to leave that isolated stack during an OpenAI test.
+# The base local stack is intentionally isolated. This explicit override allows
+# the model request to leave that isolated network for an OpenAI run.
 networks:
   incident_backend:
     internal: false

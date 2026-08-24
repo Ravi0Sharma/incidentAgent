@@ -1,35 +1,37 @@
 # Incident Agent
 
-Incident Agent is a durable, human-governed incident-analysis service built on
-FastAPI, LangGraph and MySQL. It accepts signed alerts, collects bounded
-evidence, ranks causal hypotheses, pauses for human review, creates a
-postmortem draft and requires a second approval before any external
-publication can be attempted.
+Incident Agent turns one signed alert into a small, reviewable incident
+analysis. It saves the alert, collects a bounded set of evidence, asks the
+model for an evidence-backed explanation, and shows the result to a human.
+It never restarts systems, sends tickets, or publishes anything by itself.
 
-The repository includes a production-shaped local topology: one migration
-process, one API process and two independent workers sharing a MySQL-backed
-queue and LangGraph checkpointer.
+### What value it gives
 
-> **Current status:** the core is hardened and extensively tested for local
-> multi-process execution, retries, crash recovery, schema migration,
-> backup/restore and publication idempotency. The system supports real
-> Loki/Prometheus/CloudWatch/GitHub sources and the OpenAI Responses API; those
-> boundaries have also been evaluated with real public log data and bounded
-> live model calls. The shared `docker compose up --build` profile deliberately
-> disables external connectors and the hosted model, uses a synthetic canary,
-> and keeps `PUBLISH_EXTERNAL=false` so it remains safe and reproducible. Turn
-> on real integrations only through deployment-owned configuration and secrets;
-> doing so still requires the environment and operational controls in the
-> production checklist.
+Instead of reading thousands of log lines, an incident responder gets:
 
-## Fastest start
+- the important events around the alert;
+- ranked explanations with the evidence for and against each one;
+- an explicit “I do not know” when the evidence is insufficient; and
+- a local review page and postmortem draft that a person must approve.
+
+The local stack runs MySQL, an API, and two workers. MySQL keeps the incoming
+events, queued jobs, analysis revisions and review decisions, so a worker crash
+does not lose or duplicate the analysis.
+
+## Run it
 
 Prerequisites: Docker Engine/Desktop with Compose v2, 4 GB available memory and
 host ports `8000`, `3307`, `9101` and `9102` free.
 
+### Complete local run, including OpenAI
+
+Put `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `OPENAI_MODEL` in the ignored
+`.env` file. This is the normal command when you want to see the whole flow,
+including the model:
+
 ```bash
-docker compose up --build --wait
-docker compose --profile tools run --rm --no-deps verify
+docker compose -f compose.yaml -f compose.openai.yaml up --build --wait
+docker compose -f compose.yaml -f compose.openai.yaml --profile tools run --rm --no-deps verify
 ```
 
 Then open:
@@ -42,6 +44,24 @@ Then open:
 
 Local review credentials are `incident-reviewer` / `local-review-only`. They
 are deliberately non-secret and must never be reused outside local Compose.
+
+The OpenAI run sends only the synthetic alert's redacted evidence to the
+provider. `PUBLISH_EXTERNAL=false` still prevents publishing or remediation.
+
+### No-cost topology check
+
+Use this for CI, recovery drills, or when you only want to verify API → queue
+→ two workers → review without a provider call:
+
+```bash
+docker compose up --build --wait
+docker compose --profile tools run --rm --no-deps verify
+```
+
+Here `MODEL_ENABLED=false` and `SKIP_LLM=true` are intentional. The pipeline
+still runs end-to-end, but its interpretation is deterministic. Setting only
+`SKIP_LLM=false` would not activate OpenAI because `MODEL_ENABLED=false` also
+disables it; `compose.openai.yaml` switches both settings and permits egress.
 
 The complete preflight, expected output, failure drills and reset procedure are
 in the [`Docker Compose runbook`](docs/operations/LOCAL_DOCKER_COMPOSE.md).
@@ -72,6 +92,32 @@ The `migrator` service runs first under a DDL-capable identity and exits. API
 and worker users only receive data-plane grants. The API becomes ready only
 after the current migration exists, MySQL and the queue respond, and at least
 two current worker heartbeats are visible.
+
+![Incident Agent system flow](docs/architecture/SYSTEM_FLOW.svg)
+
+## What a run produces
+
+The review UI is the main result. Send the canary above, then open
+`http://127.0.0.1:8000/` and select the incident. It contains the evidence,
+candidate explanations, uncertainty and the review decision.
+
+| Where | What it tells you | How to open it |
+| --- | --- | --- |
+| Review UI | The human-facing analysis and local postmortem draft | `http://127.0.0.1:8000/` |
+| API and worker metrics | Queue, workers, errors, model budgets and latency | `:8000/metrics`, `:9101/metrics`, `:9102/metrics` |
+| MySQL | Durable events, jobs, revisions and review decisions | `127.0.0.1:3307` for local inspection |
+| `/app/output` volume | Generated HTML drafts and bounded local raw-log cache | `docker compose exec api ls -lah /app/output` |
+
+`config/incident_agent_dashboard.json` is a **Grafana import file**, not a
+running dashboard. Import it into Grafana after Prometheus is configured to
+scrape the three metrics endpoints. It shows workers, queue state, dead
+letters, MySQL-pool use, rejected alerts and the publication guard.
+
+Phoenix is optional local trace viewing: it shows the timing and route through
+LangGraph and the model call. It is not started by Compose and it is not needed
+to run an incident. Start it only for native debugging with
+`.venv/bin/python scripts/start_phoenix.py`; its local data stays in the
+ignored `.phoenix_data/` folder. The trace UI is `http://127.0.0.1:6006/`.
 
 ## Why the system exists
 
@@ -181,8 +227,8 @@ keeps one pending analysis job and at most one follow-up while it runs.
 successful OpenAI calls, 0 dead letters. After the 12-call incident budget is
 reached, later revisions use the deterministic fallback.
 
-The default Compose load test makes no external calls; opt in with
-`compose.openai-smoke.yaml` for real OpenAI calls.
+The default Compose load test makes no external calls. Use
+`compose.openai.yaml` when the synthetic load is intended to exercise OpenAI.
 
 
 ## Main components
@@ -216,7 +262,6 @@ Only high-signal entrypoints and deployment files live at root:
 - `compose.yaml` and `Dockerfile` — local topology and immutable runtime image;
 - `app.py`, `settings.py`, `langgraph.json` — application entry/configuration;
 - `pyproject.toml` and `requirements*.{txt,in,lock}` — tooling and locked dependencies;
-- `railway*.toml` — existing shared-development deployment definitions;
 - `.env.example` — native local configuration reference.
 
 Generated reports, local databases, caches, `.env` and runtime state are
@@ -364,8 +409,8 @@ Important groups:
 | Runtime | `ENVIRONMENT`, `PROCESS_ROLE`, `SERVICE_VERSION` | Secure modes fail closed on unsupported combinations |
 | Database | `MYSQL_*`, `CHECKPOINTER`, `RUNTIME_SCHEMA_DDL_ENABLED` | API/worker roles have no DDL; migrator is separate |
 | Queue | `JOB_LEASE_SECONDS`, `MIN_ACTIVE_WORKERS`, `MAX_PENDING_JOBS`, `INCIDENT_BUCKET_SECONDS`, `INCIDENT_COALESCE_SECONDS`, `INCIDENT_COALESCE_MAX_SECONDS` | Heartbeat, lease, bucket and debounce timings are validated |
-| Intake | `WEBHOOK_SHARED_SECRET`, size/rate limits, tenant/environment allowlists | Reject before analysis when contract fails |
-| Sources | `LOG_SOURCE`, `METRIC_SOURCE`, connector URLs and limits | Source selection comes from deployment config, never alert fields |
+| Intake | HMAC/replay settings, source/proxy CIDRs, body and rate limits | Reject before analysis when contract fails |
+| Sources | `LOG_SOURCE`, `METRIC_SOURCE`, connector URLs and severity-aware query limits | Source selection comes from deployment config, never alert fields |
 | Model | provider/model, retry, deadline, token and cost limits | Secure modes forbid missing hosted credentials or `SKIP_LLM=true` |
 | Review | basic local values or `OIDC_*`, CSRF/session secrets and role sets | Shadow/production require OIDC and explicit roles |
 | Publishing | `PUBLISH_EXTERNAL` | Default false; approval and durable attempt guard still required |
@@ -374,6 +419,9 @@ Important groups:
 `ENVIRONMENT=shadow` and `production` invoke strict startup validation for
 managed secrets, HTTPS URLs, OIDC, TLS-verified MySQL, tenant isolation,
 explicit CORS/egress, current migrations, dedicated roles and worker topology.
+
+The header format, source-address handling and rate-limit order are specified
+in [`WEBHOOK_INGRESS.md`](docs/operations/WEBHOOK_INGRESS.md).
 
 ## Security boundaries
 
@@ -529,17 +577,17 @@ fictional “model accuracy” number.
 
 | Boundary | Current result | What it establishes |
 | --- | --- | --- |
-| Engineering quality gate | **337 tests**; **74.5%** whole-repository, **82.2%** core-path and **95.8%** security-path branch coverage | Code/regression coverage and local runtime behavior, not incident accuracy. |
+| Engineering quality gate | **349 tests**; **75.4%** whole-repository, **82.2%** core-path and **95.9%** security-path branch coverage | Code/regression coverage and local runtime behavior, not incident accuracy. |
 | HDFS 2k grouping | **100%** pair precision; **96.60%** recall; 14/14 source templates retained | Over-merging/fragmentation on one public corpus; template IDs are not incident causes. |
 | HDFS v3/TraceBench grouping | **100%** pair precision; **98.83%** recall; 75/75 labels retained | Generalization of normalized grouping; TraceBench labels are an upstream proxy. |
 | Curated BGL/OpenStack pair gate | **73/73** pairs; 100% precision, recall and specificity | A reviewed normalization contract boundary, not an independent human gold-set. |
 | Spark 2k parser/grouping | 2,000/2,000 parsed; **100%** precision; **98.91%** recall; **99.45%** F1 | Parser/grouping quality on an INFO-only sample; not failure detection or RCA. |
 | Hadoop typed pre-review | 100% grounding (55/55); 0 unknown evidence IDs; 0 unsupported predictions; 98.18% exact-or-honest-abstention | Label-last evidence/review boundary. Raw exact agreement is 32.73% because many supplied labels are absent from, or conflict with, recoverable evidence. |
 | Live model evaluation (2026-08-09) | 22 successful bounded calls; 0 unknown evidence IDs/unsupported percentages | Provider transport, structured output and abstention/grounding on limited cases; not production reliability or causal accuracy. |
+| OpenAI bucket load (2026-08-24) | 100,000 synthetic events; 12 revisions, 12 successful provider calls and 0 dead letters | Local admission, coalescing and deterministic budget fallback; not capacity, cost-calibration or production evidence. |
 
 See the full methodology in
 [`PRE_REVIEW_EVALUATION.md`](docs/reports/PRE_REVIEW_EVALUATION.md),
-[`LOGHUB_2_EVALUATION_2026-08-09.md`](docs/reports/LOGHUB_2_EVALUATION_2026-08-09.md)
 and [`OPENAI_LIVE_EVALUATION_2026-08-09.md`](docs/reports/OPENAI_LIVE_EVALUATION_2026-08-09.md).
 
 ### Reproducing the evidence
@@ -551,38 +599,43 @@ Run the full code-quality gate, then the relevant label-last evaluator:
 .venv/bin/python scripts/evaluate_pre_review.py
 .venv/bin/python scripts/evaluate_hadoop_typed_review.py --cases 55 \\
   --output output/hadoop-typed-review-all-55.json
-.venv/bin/python scripts/evaluate_spark_pilot.py --sample-limit 200 \\
-  --output output/spark-pilot.json
 ```
 
-Public corpora have licensing/provenance requirements and may need separate
-fetching. Before external use, run harmless representative incidents from each
-real alert and evidence source, retain operator truth separately, and review
-abstentions and contradictions with responders.
+Before external use, run harmless representative incidents from each real alert
+and evidence source, retain operator truth separately, and review abstentions
+and contradictions with responders.
 
-## Production boundary
+## Before connecting a target environment
 
-Code-level multi-process and recovery foundations do not replace environment
-work. Before opening external ingress:
+Code-level multi-process and recovery foundations do not replace these
+environment and technical gates. Complete them before opening external
+ingress or sending real telemetry to a model.
 
-- provision managed MySQL with encrypted storage, verified TLS, separate
-  migrator/API/worker users, backups and tested point-in-time recovery;
-- place webhook, model, OIDC, connector, metrics and publication credentials in
-  an approved secret manager;
-- run separate API and at least two worker instances across failure domains;
-- configure HTTPS, DNS, WAF/rate limiting and provider signature/retry behavior;
-- configure OIDC roles, tenant isolation, explicit CORS and outbound egress;
-- connect real read-only evidence sources and validate their query/retention
-  contracts;
-- keep `PUBLISH_EXTERNAL=false` through shadow approval;
-- alert on queue depth, expired leases, dead letters, stale workers, MySQL/PITR,
-  source/model failures and model cost;
-- assign owners for migrations, release approval, dead-letter replay, secret
-  rotation, publication reconciliation and incident response;
-- run `scripts/production_preflight.py` and attach release evidence.
+1. **Platform and network.** Choose the deployment platform, IaC and CI/CD.
+   Provision managed MySQL with encrypted storage, verified TLS, separate
+   migrator/API/worker identities and backups. Configure HTTPS, DNS, WAF/rate
+   limiting and failure-domain worker placement.
+2. **Data and security.** Approve which alerts, logs and evidence classes may
+   leave the environment or reach the model. Set classification, retention,
+   deletion, legal hold, encryption and backup rules; place all credentials in
+   an approved secret manager.
+3. **Identity and access.** Choose the IdP (for example Entra ID or Okta), map
+   reviewer/operator/admin roles, define tenant boundaries and register the
+   OIDC application. Validate CORS, CSRF and access audit requirements.
+4. **Operating targets.** Ratify SLOs, expected traffic, per-incident model and
+   infrastructure cost limits, and RPO/RTO. Alert on queue depth, expired
+   leases, dead letters, stale workers, MySQL/PITR, source/model failures and
+   budget exhaustion.
+5. **OpenAI/provider policy.** Approve model, region, data-retention/training
+   terms, egress allowlist, secret-manager delivery and billing reconciliation.
+   Keep model cost/token budgets positive and calibrated outside local mode.
+6. **Quality and shadow evidence.** Prepare at least 100 representative
+   anonymised incidents or approved replays, define scoring thresholds, then run
+   a read-only shadow period with no publication.
 
-The authoritative checklist is
-[`PRODUCTION_READINESS.md`](docs/operations/PRODUCTION_READINESS.md). It is the
+Then run `scripts/production_preflight.py` and attach the resulting release
+evidence. The authoritative checklist is
+[`PRODUCTION_READINESS.md`](docs/operations/PRODUCTION_READINESS.md); it is the
 source of truth over informal “production ready” claims.
 
 ## Documentation map

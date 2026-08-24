@@ -5,7 +5,7 @@ Incident Agent topology. It starts MySQL, applies migrations once, starts a
 separate API and two independent workers, and keeps every published port bound
 to `127.0.0.1`.
 
-The stack is intentionally safe for local development:
+The base stack is intentionally safe for local development:
 
 - evidence connectors and the hosted model are disabled;
 - fixture-backed deterministic analysis remains available;
@@ -16,6 +16,11 @@ The stack is intentionally safe for local development:
 
 It is not a production deployment template. Production requirements are in
 [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
+
+For a complete local run that includes the real OpenAI model, use the explicit
+override below. It reads provider settings from the ignored `.env`, enables the
+model, and permits outbound access only for that run. `PUBLISH_EXTERNAL` stays
+false.
 
 ## Topology
 
@@ -66,6 +71,23 @@ The only required startup command is:
 ```bash
 docker compose up --build --wait
 ```
+
+This is the no-cost topology check: it runs the complete durable workflow with
+deterministic interpretation, because `MODEL_ENABLED=false` and
+`SKIP_LLM=true` in `compose.yaml` deliberately block provider calls.
+
+### Start the full flow with OpenAI
+
+With a valid `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` in `.env`:
+
+```bash
+docker compose -f compose.yaml -f compose.openai.yaml up --build --wait
+docker compose -f compose.yaml -f compose.openai.yaml --profile tools run --rm --no-deps verify
+```
+
+The second command sends one signed synthetic canary through API, two workers,
+MySQL and the OpenAI model. It does not use external telemetry connectors and
+cannot publish externally.
 
 On the first run Docker downloads the pinned base images, builds the application
 image, initializes the database users, applies every migration, starts both
