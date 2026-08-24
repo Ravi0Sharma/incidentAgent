@@ -47,21 +47,23 @@ long-duration SLO evidence remain open.
 **Planning update (2026-07-22):** the active finish line is now
 [`Local-Safe v0.1`](../development/SAFE_COMPLETION_PLAN.md), not Shadow-Ready. It permits
 fixture/replay-only local use with no production telemetry, hosted deployment,
-or external effects. The Shadow-Ready DoD below remains a future, unchanged
-safety gate. Railway work is out of the active scope.
+or publishing/remediation effects. The default runtime makes no external calls;
+the explicit, synthetic OpenAI smoke override is the narrow exception used to
+verify model behaviour. The Shadow-Ready DoD below remains a future, unchanged
+safety gate. Hosted deployment is out of the active scope.
 
 **Verification note:** this is fresh local evidence, not a Shadow/production
 claim. The suite ran against the configured local MySQL test database.
 
 Current local baseline:
 
-- `python scripts/quality_gate.py`: 334/334 test methods
+- `python scripts/quality_gate.py`: 349/349 test methods
   passed, including MySQL lifecycle/persistence, security/observability, API,
   evidence, hypothesis, connector-policy, CloudWatch adapter, Hadoop, HDFS_v1,
   OpenStack, signal-retention and adversarial-boundary coverage. The same run
   passed Ruff, scoped mypy, compileall, prompt budgets and the repository
-  secret scan. Branch coverage measured 74.5% repository-wide, 82.2% for the
-  explicit core scope and 95.8% for the explicit security-control scope.
+  secret scan. Branch coverage measured 75.4% repository-wide, 82.2% for the
+  explicit core scope and 95.9% for the explicit security-control scope.
 - The default local workflow supports alert ingestion, bounded collection,
   normalization, grouping, detection, ranking, semantic interpretation,
   human review, RCA, postmortem drafting, and local HTML output.
@@ -72,8 +74,16 @@ Current local checks:
   settings.py tests utils webhook`: passed.
 - `.venv/bin/python scripts/check_prompt_budget.py`: passed. Interpretation was
   5 064 characters, RCA 4 047, postmortem 3 743, and the evidence pack 4 192.
-- The dated Local-Safe technical validation and closure record are in
-  [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-09.md).
+- The original Local-Safe closure record and the current evidence refresh are in
+  [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-09.md)
+  and
+  [`LOCAL_SAFE_CLOSURE_2026-08-24.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-24.md).
+- Opt-in OpenAI bucket-load evidence: 100,000 synthetic webhook events with two
+  workers produced 12 durable analysis jobs/revisions, 12 successful provider
+  calls and 0 dead letters. The per-incident 12-call budget then blocked 6
+  later calls and used the deterministic fallback. This proves local admission,
+  coalescing and fallback behaviour only; it is not capacity, cost-calibration
+  or production-provider evidence.
 - HDFS_v1: 575 061 traces counted and truth-joined only after label-free
   artifacts; 500 balanced sampling cases passed boundary/signal retention.
 - OpenStack: 207 820 primary events parsed; all continuation lines accounted
@@ -130,7 +140,7 @@ The most important production blockers are:
 3. There is no curated cross-incident knowledge memory with provenance,
    approval, retention, deletion, and retrieval evaluation.
 4. OIDC/RBAC, CSRF, replay protection and redaction controls exist locally;
-   real identity registration, immutable audit storage, encryption ownership,
+   real identity registration, immutable audit storage, encryption,
    retention/deletion and penetration evidence remain incomplete.
 5. Separate draft publication approval and an aggregate at-most-once attempt
    guard exist. Provider-specific idempotency and safe retry of only a failed
@@ -139,11 +149,12 @@ The most important production blockers are:
    provider-reported usage ledger, but initial connectors still lack cooperative
    mid-request cancellation and the cost estimate is not reconciled to billing.
    Strict structured output across every generation stage also remains open.
-7. The local tests and public-dataset loops provide a stronger contract,
-   MySQL, grounding and data-retention baseline, but there is still no
-   SRE-adjudicated production gold set or sufficient E2E, load, adversarial,
-   concurrency and controlled fault-injection evidence for production quality
-   or calibration claims.
+7. The local tests, public-dataset loops and synthetic 100,000-event OpenAI
+   run provide a stronger contract, MySQL, grounding, data-retention and
+   admission-control baseline, but there is still no SRE-adjudicated production
+   gold set or sufficient SLO-based E2E, soak, adversarial, concurrency and
+   controlled fault-injection evidence for production quality or calibration
+   claims.
 8. A durable MySQL job queue exists, but there is no independent continuously
    deployed worker, production packaging, CI/CD pipeline, deployment
    definition, or managed operations model.
@@ -154,7 +165,7 @@ The most important production blockers are:
 | --- | --- | --- | --- |
 | Local prototype | Develop the reasoning flow with fixtures and a local model | Local files only | Existing baseline |
 | Shadow | Read production telemetry and compare with real incidents without influencing response | No messages, tickets, remediation, or final documents | All Shadow DoD items below |
-| Controlled pilot | Show decision support to a small on-call group | Drafts only; explicit human approval for every external write | P0 complete and pilot metrics met |
+| Controlled pilot | Show decision support to a small reviewer group | Drafts only; explicit human approval for every external write | P0 complete and pilot metrics met |
 | General availability | Reliable, supported production service | Approved documentation only; remediation remains out of scope | All P0/P1 release gates complete |
 
 ## 1. Product Scope And Safety Contract
@@ -195,8 +206,8 @@ runtime P0/P1 controls are complete.
   citation, evidence, or risky-action guardrails is replaced by a safe
   abstention before review, covered by an `A01-T04` subset.
 - [ ] `SCP-008` `P1` Establish a change policy for prompts, models, rules,
-  schemas, and source mappings, including required evaluation and rollback.
-- [x] `SCP-008a` The required change record, evaluation, rollback, and approval
+  schemas, and source mappings, including required evaluation.
+- [x] `SCP-008a` The required change record, evaluation and approval
   policy is documented in `OPERATING_CONTRACT.md`; CI enforcement remains open.
 
 ## 2. Alert Intake And Incident Lifecycle
@@ -304,11 +315,15 @@ Supporting artifact: [`ALERT_INPUT_CONTRACT.md`](../contracts/ALERT_INPUT_CONTRA
 - [ ] `ING-018` `P1` Rate-limit by trusted caller and globally. Load tests prove
   one noisy source cannot starve other sources or the review UI.
 - [x] `ING-018a` A bounded local global/per-caller intake rate limiter returns
-  `429` with `Retry-After`, covered by a boundary test. Distributed trusted
-  identity, fairness and load-test proof remain open.
+  `429` with `Retry-After`, covered by a boundary test. Caller identity comes
+  from the direct source address; `X-Forwarded-For` is accepted only from a
+  configured trusted proxy, and an optional source-CIDR filter returns `403`
+  before nonce consumption. Distributed fairness and load-test proof remain
+  open.
 - [x] `ING-018b` Runtime counters are now shared through MySQL and store only a
-  hash of the caller key. Independent trusted caller identity and load/fairness
-  evidence remain required before closing `ING-018`.
+  hash of the resolved source address. An arbitrary client-ID header cannot
+  split the caller budget; secure-runtime CIDR syntax is startup-validated.
+  Load/fairness evidence remains required before closing `ING-018`.
 
 ## 3. Telemetry And Change-Source Connectors
 
@@ -332,7 +347,11 @@ Supporting artifact: [`CONNECTOR_CONTRACT.md`](../contracts/CONNECTOR_CONTRACT.m
   interface and real-backend suite remain open.
   Local progress: CloudWatch Logs Insights and GetMetricData now use bounded,
   injected SDK clients with explicit polling/pagination budgets. Contract tests
-  use AWS-shaped fixtures; a real AWS sandbox suite is still required.
+  use AWS-shaped fixtures. Loki collection is severity-aware and samples across
+  incident time slices plus high-signal shapes under the configured hard cap
+  (default 5,000); provenance records the strategy and truncation. A real AWS
+  sandbox suite is
+  still required.
 - [ ] `SRC-007` `P0` Make all timeouts, retry policies, concurrency limits, and
   circuit thresholds configurable per source and observable at runtime.
 - [x] `SRC-007a` Loki, Prometheus, CloudWatch, GitHub, and Slack now use configurable
@@ -569,10 +588,10 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
   positive read-only verb policy: mutating or unknown actions require explicit
   `proposal` plus approval, executed-action claims are removed, and an unsafe
   fallback is replaced with a generic read-only verification.
-- [ ] `COR-017` `P2` Add service-specific rule packs with owners, expiry/review
-  dates, test fixtures, and safe fallback when a pack fails to load.
-  Deferred until the target services, owners, and representative incident
-  types are known; no generic packs will be invented from LogHub-only data.
+- [ ] `COR-017` `P2` Add service-specific rule packs with expiry/review dates,
+  test fixtures, and safe fallback when a pack fails to load.
+  Deferred until the target services and representative incident
+  types are known; no generic packs will be invented from generic public data.
 
 ## 6. LLM Boundary, Efficiency, And Model Operations
 
@@ -680,7 +699,7 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
   Unapproved model output must never become durable knowledge automatically.
 - [x] `MEM-007a` Curated knowledge accepts only explicit approved source types
   with approval identity/reference and never implicitly stores model output.
-- [ ] `MEM-008` `P1` Tag knowledge with provenance, owner, approval identity,
+- [ ] `MEM-008` `P1` Tag knowledge with provenance, approval identity,
   created/updated time, service, environment, incident type, validity period,
   security class, schema version, and source link.
 - [x] `MEM-008a` Knowledge records store source link/type, approval identity,
@@ -777,8 +796,8 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
 - [x] `REV-014a` Generated and edited local postmortem drafts retain immutable
   versioned records, covered by `tests/test_memory_review_persistence.py`.
 - [ ] `REV-015` `P1` Require postmortems to separate verified facts, inferred
-  root cause, contributing factors, impact, detection, response, action items,
-  owners, and due dates.
+  root cause, contributing factors, impact, detection, response, action items
+  and due dates.
 - [ ] `REV-016` `P1` Validate that postmortem facts cite the approved evidence
   revision and that unverified 5-Whys steps are clearly labeled hypotheses.
 - [ ] `REV-017` `P1` Support correction/retraction of a published analysis with
@@ -817,12 +836,12 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
   secrets from an approved secret manager, support rotation, and fail startup
   on insecure defaults.
 - [ ] `SEC-009` `P0` Encrypt network traffic and all durable incident data at
-  rest using approved key management. Document key ownership and rotation.
-- [ ] `SEC-010` `P0` Enforce RBAC and least privilege for reviewers, operators,
-  source connectors, publisher destinations, and administrative actions.
+  rest using approved key management and rotation.
+- [ ] `SEC-010` `P0` Enforce RBAC for reviewers, operators and administrative
+  actions.
 - [x] `SEC-010a` Reviewer HTTP access distinguishes OIDC viewer, decision and
   operator roles and stores a stable pseudonymous issuer/subject identity in
-  review audit records. Connector/publisher and tenant authorization remain.
+  review audit records. Additional authorization boundaries remain.
 - [ ] `SEC-011` `P0` Add CSRF protection or a same-origin token strategy for
   authenticated browser mutations, in addition to restrictive CORS.
 - [x] `SEC-011a` Review decisions require a signed, expiring CSRF token bound to
@@ -986,8 +1005,8 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
   core workflow code and 90% for security, idempotency, review, evidence
   grounding, and publication controls.
 - [x] `TST-005a` Branch coverage is measured in the shared local/CI command.
-  The locked 2026-08-09 run measured 74.8% repository-wide with a 74% ratchet,
-  82.4% for the explicitly listed core workflow against an 80% gate, and 97.2%
+  The locked 2026-08-24 run measured 75.4% repository-wide with a 74% ratchet,
+  82.2% for the explicitly listed core workflow against an 80% gate, and 95.9%
   for the explicitly listed security controls against a 90% gate.
 - [ ] `TST-006` `P0` Add API tests for schema validation, authentication,
   signature replay, body limits, rate limits, CORS/CSRF, error contracts, and
@@ -1053,7 +1072,7 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
 - [ ] `TST-017` `P1` Add soak and failure-injection tests for memory leaks,
   checkpoint growth, provider throttling, partial source outages, database
   reconnect, and worker restarts.
-- [ ] `TST-018` `P1` Run blinded on-call evaluation comparing the agent to the
+- [ ] `TST-018` `P1` Run blinded reviewer evaluation comparing the agent to the
   existing process. Measure time-to-useful-hypothesis, correctness, reviewer
   effort, false confidence, and missed evidence.
 - [ ] `TST-019` `P1` Treat quality, security, cost, and latency thresholds as
@@ -1132,7 +1151,7 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
 - [ ] `DEP-007` `P0` Separate development, test, staging, shadow, and production
   data/credentials/destinations. Tests cannot publish to real incident channels.
 - [ ] `DEP-008` `P0` Add CI/CD with build provenance, signed artifact, migration
-  step, automated gates, staged rollout, smoke test, and one-command rollback.
+  step, automated gates, staged rollout and smoke test.
 - [ ] `DEP-009` `P0` Document and test kill switches for LLM use, source
   expansion, memory retrieval, reviewer UI, and each publication destination.
 - [x] `DEP-009a` Current POC LLM, source-tool, reviewer-UI and publication
@@ -1143,12 +1162,12 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
 - [x] `DEP-011` `P1` Write operator runbooks for queue backlog, stuck workflow,
   database/storage pressure, model outage, source outage, auth failure,
   compromised secret, bad model/prompt/rule release, and duplicate publication.
-- [ ] `DEP-012` `P1` Assign an on-call rotation and escalation path for the agent
-  itself, with dashboards, paging rules, support hours, and incident ownership.
+- [ ] `DEP-012` `P1` Provide dashboards, paging rules and support hours for the
+  agent itself.
 - [ ] `DEP-013` `P1` Define maintenance, dependency upgrade, key rotation,
   retention cleanup, knowledge review, rule review, and restore-drill schedules.
-- [ ] `DEP-014` `P1` Complete a production-readiness review with product, SRE,
-  security, privacy, data, and platform sign-off.
+- [ ] `DEP-014` `P1` Complete a production-readiness review covering product,
+  SRE, security, privacy, data and platform concerns.
 
 ## 15. Documentation And Governance
 
@@ -1180,21 +1199,21 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
 - [x] `DOC-005b` `SETUP_GUIDE.md` documents safe local/test setup and required
   boundaries for future staging, shadow and production environments.
 - [ ] `DOC-006` `P1` Publish reviewer guidance explaining confidence,
-  contradiction, data gaps, stale revisions, approval responsibility, and how
+  contradiction, data gaps, stale revisions, approval boundaries, and how
   to report a bad analysis.
 - [x] `DOC-006a` `REVIEWER_GUIDE.md` documents evidence, uncertainty,
   contradiction, stale revision and feedback expectations for the POC.
 - [ ] `DOC-007` `P1` Publish model/prompt/rule evaluation reports and a release
   change log with known limitations.
-- [ ] `DOC-008` `P1` Define owners and review/expiry dates for service metadata,
-  detection rules, suppression rules, runbooks, and curated knowledge.
+- [ ] `DOC-008` `P1` Define review/expiry dates for service metadata, detection
+  rules, suppression rules, runbooks, and curated knowledge.
 - [ ] `DOC-009` `P1` Maintain a data inventory with classification, purpose,
   store, region, access, retention, deletion, and downstream processors.
 - [x] `DOC-009a` `DATA_INVENTORY.md` identifies current POC stores, purpose,
   access and explicitly missing retention/deletion/processor controls.
 - [ ] `DOC-010` `P1` Link every production release to its DoD evidence: test
   report, eval report, security scans, migration result, restore drill, load
-  result, dashboards, and approvers.
+  result and dashboards.
 - [x] `DOC-010a` `RELEASE_EVIDENCE.md` defines required immutable release
   evidence; no production release has been asserted.
 
@@ -1236,8 +1255,8 @@ and the dependency order for resuming this work.
   evaluated in shadow mode, with no critical data leak or external side effect.
 - [ ] Citation validity, unsupported-claim rate, top-3 usefulness, abstention,
   latency, failure, and cost meet the ratified thresholds.
-- [ ] On-call reviewers have completed a game day and signed off that the
-  decision brief is understandable, traceable, and faster than their baseline.
+- [ ] A reviewer game day shows that the decision brief is understandable,
+  traceable, and faster than the baseline.
 
 ## Controlled Pilot DoD
 
@@ -1251,8 +1270,8 @@ and the dependency order for resuming this work.
 - [ ] Approved knowledge memory is available with filter-first retrieval,
   citations, poisoning controls, retention, and measured retrieval quality
   (`MEM-007` through `MEM-014`).
-- [ ] Pilot access is limited to named services and reviewers; kill switches and
-  escalation contacts are visible in the UI/runbook.
+- [ ] Pilot access is limited to named services and reviewers; kill switches are
+  visible in the UI/runbook.
 - [ ] No critical/high security findings remain open.
 
 ## General Availability Release Gate
@@ -1261,18 +1280,18 @@ A release is production-ready only when all conditions below are true:
 
 - [ ] No `P0` criterion in this document is open.
 - [ ] Every `P1` criterion is complete or has a documented, time-bounded risk
-  acceptance signed by its accountable owner and security/SRE where relevant.
+  acceptance.
 - [ ] CI, security, migration, connector contract, end-to-end, evaluation, load,
   soak, and recovery suites pass on the exact release artifact.
 - [ ] The latest gold-set and shadow/pilot results meet all ratified quality,
   calibration, safety, latency, reliability, and cost thresholds.
 - [ ] A backup restore, worker crash, model outage, source outage, alert storm,
   stale review, and duplicate-publication drill have succeeded.
-- [ ] Dashboards, alerts, error budgets, runbooks, on-call ownership, escalation,
-  capacity, and monthly cost controls are active.
-- [ ] Security, privacy/data, SRE/platform, incident-management product owner,
-  and representative on-call reviewers have signed the release evidence.
-- [ ] Rollback and all kill switches were tested during the release rehearsal.
+- [ ] Dashboards, alerts, error budgets, runbooks, capacity, and monthly cost
+  controls are active.
+- [ ] Release evidence includes security/privacy, SRE/platform,
+  incident-management and reviewer results.
+- [ ] Kill switches were tested during the release rehearsal.
 - [ ] External publication cannot occur without authentication, authorization,
   exact-draft approval, audit record, and idempotent outbox delivery.
 - [ ] Automatic remediation remains absent or disabled; adding it requires a
@@ -1306,6 +1325,5 @@ An individual item may be checked only when:
 - telemetry makes success and failure observable;
 - security/privacy implications are reviewed;
 - documentation and operator/reviewer behavior are updated;
-- migration, rollback, and backward compatibility are addressed where needed;
-- the change is evaluated against quality, latency, and cost baselines; and
-- a named owner accepts the operational responsibility.
+- backward compatibility is addressed where needed; and
+- the change is evaluated against quality, latency, and cost baselines.

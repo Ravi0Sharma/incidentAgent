@@ -82,10 +82,8 @@ must name the exact dataset version.
 
 The local pre-review gate is documented in `PRE_REVIEW_EVALUATION.md`.
 `scripts/evaluate_pre_review.py` exercises exact synthetic causal
-counterexamples. `scripts/evaluate_public_logs.py` exercises parsing, timestamp,
-sampling, and grouping robustness on allowlisted public logs. Public template
-labels are not accepted as root-cause truth and cannot close the labelled
-incident-gold-set requirement.
+counterexamples. Synthetic test fixtures are not accepted as root-cause truth
+and cannot close the labelled incident-gold-set requirement.
 
 ## Required Test Evidence
 

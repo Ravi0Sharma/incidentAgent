@@ -2,10 +2,9 @@
 
 Status: proposed closure plan  
 Last updated: 2026-07-22  
-Scope: areas 2–7, 10–13, 15, the Shadow-Ready DoD, and the non-Railway
-hardening work in `PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md`. The related
-review, security, and packaging constraints from areas 8, 9, and 14 are also
-included where the hardening plan depends on them.
+Scope: areas 2–7, 10–13, 15, the Shadow-Ready DoD, and the related local
+hardening work. The related review, security, and packaging constraints from
+areas 8, 9, and 14 are also included where the plan depends on them.
 
 ## Decision This Plan Makes
 
@@ -22,10 +21,9 @@ honest milestone first:
 > accepts no production telemetry, makes no external writes, has no hosted
 > deployment target, and makes no Shadow-Ready or production claim.
 
-Railway work is deliberately excluded from this plan. The Railway sections in
-`PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md` remain a future reference only; do
-not create a Railway environment, publish a service, or copy credentials as
-part of Local-Safe v0.1.
+Hosted deployment is deliberately excluded from this plan; do not create a
+hosted environment, publish a service, or copy credentials as part of
+Local-Safe v0.1.
 
 ## What “Finish” Means
 
@@ -118,7 +116,7 @@ restart safely without reopening the entire checklist at once.
 | 2. Trusted source collection | Area 3 (`SRC-006`–`SRC-016`) and hardening priorities 2–4 | approved read-only source identities, representative backend fixtures, source ownership, query provenance, schema/freshness and pagination evidence |
 | 3. Grounded analysis | Area 5 (`COR-007`–`COR-017`), Area 6 (`LLM-007`–`LLM-018`), and hardening priorities 1, 4–6 | strict typed output, independent grounding, cancellation/deadlines, real usage and cost ledger, adversarial evaluation, calibrated labels |
 | 4. Governed memory, review, and security | Area 7 (`MEM-003`–`MEM-015`), related areas 8/9, and hardening priority 2 | authorization boundary, approved knowledge sources, retention/deletion policy, retrieval evaluation, SSO/RBAC, immutable audit, exact-draft approval, outbox, least-privilege credentials and egress controls |
-| 5. Operable service | Area 10 (`REL-012`–`REL-017`), Area 11, Area 13, and non-Railway hardening priority 1/2 | independent worker, backpressure, full logs/metrics/traces, dashboards/alerts, capacity and cost benchmarks, game days |
+| 5. Operable service | Area 10 (`REL-012`–`REL-017`), Area 11, Area 13, and service hardening priority 1/2 | independent worker, backpressure, full logs/metrics/traces, dashboards/alerts, capacity and cost benchmarks, game days |
 | 6. Proof, packaging, and release governance | Areas 12, 14, and 15 plus evaluation/release-evidence sections of the hardening plan | CI, reproducible build/container, environment isolation, coverage/security gates, gold set with SRE adjudication, E2E/load/chaos/restore reports, owners and signed release evidence |
 
 Tracks 1–3 are prerequisites for meaningful Shadow evaluation. Track 6 must
@@ -182,7 +180,7 @@ Fixture/redaction/prompt-budget evidence links:
 Confirmed safety settings: PUBLISH_EXTERNAL=false; fixture-only; no public endpoint:
 Known limitations and deferred tracks:
 Decision: Local-Safe complete | pending validation
-Explicit statement: not Shadow-Ready; not production-ready; Railway excluded
+Explicit statement: not Shadow-Ready; not production-ready; hosted deployment excluded
 ```
 
 A named owner is deliberately omitted from this local closure template. Named

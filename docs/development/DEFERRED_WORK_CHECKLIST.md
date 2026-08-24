@@ -20,14 +20,10 @@ dit först när dess återupptagningsvillkor är uppfyllt.
 
 ## Drift, hosting och verkliga datakällor
 
-- [ ] **Railway-hosting och deployment.** Vänta med projekt, domän, build,
-      runtimevariabler, persistens, health checks och releaseflöde tills den
-      lokala pipelinen och dess evalgrindar är godkända. **Återuppta vid:**
-      `M19`, efter `M07`–`M13` och när Railway fortfarande är valt driftmål.
 - [ ] **Verklig SSO/OIDC-konfiguration.** Den providerneutrala
       sessions-/JWT-/RBAC-koden finns lokalt. Registrering av callback,
       claims-to-role-mappning, allowlist och staging-E2E väntar tills IdP och
-      driftmiljö är valda. Railway Login kräver en uttrycklig rolladapter.
+      driftmiljö är valda.
       **Återuppta vid:** `M15` eller när stagingmiljön bestäms.
 - [ ] **CloudWatch som faktisk källkedja.** Adapter och lokala kontrakt finns,
       men verkliga AWS-konton, regioner, IAM-policy, log groups, metrics,
@@ -47,10 +43,9 @@ dit först när dess återupptagningsvillkor är uppfyllt.
 - [ ] **Service-specifika rule packs.** Skapa inte regler för att passa Hadoop,
       HDFS eller andra publika dataset. **Återuppta vid:** `M09`–`M12`, när
       faktiska tjänster, beroenden, ägare och vanliga incidenttyper är kända.
-- [ ] **Representativt privat gold set.** Publika LogHub-data används för
-      parser-, tidslinje-, korrelations- och robusthetstest, inte som bevis för
-      produktionsprecision. **Återuppta vid:** `M11`, med miljömatchade replays
-      och dubbel mänsklig bedömning.
+- [ ] **Representativt privat gold set.** Bygg detta från miljömatchade
+      incidenter eller anonymiserade replays, inte från ett publikt corpus.
+      **Återuppta vid:** `M11`, med dubbel mänsklig bedömning.
 - [ ] **Historiska/peer-baselines och confidence-kalibrering.** Vänta tills
       tillräckligt många representativa, granskade fall finns. **Återuppta vid:**
       `M12`; jämför då också mot en enkel baseline utan LLM.
@@ -89,7 +84,7 @@ dit först när dess återupptagningsvillkor är uppfyllt.
 - [ ] **Breddad OpenAI/provider-felmatris.** Connection refused, DNS, timeout,
       401/403, 429, circuit open, tom usage och incidentdeadline finns samlade i
       [`DEFERRED_CONNECTION_FAILURE_TESTS.md`](DEFERRED_CONNECTION_FAILURE_TESTS.md).
-      **Återuppta före:** Shadow eller Railway. Bounded retry/deadline och lokal
+      **Återuppta före:** Shadow eller hostad deployment. Bounded retry/deadline och lokal
       fail-closed-logik fortsätter vara aktiva krav.
 - [ ] **Staging-load, fairness, crash, migration, restore och minst 24 h soak.**
       Dessa kräver en representativ deployad miljö. **Återuppta vid:**

@@ -27,7 +27,7 @@ ingår i produktens supportgräns.
 | Orkestrering | Kubernetes-fält kan normaliseras | Ingen Kubernetes-connector eller bekräftad Kubernetes-målmiljö |
 | Kafka | Förväntad framtida relevans enligt projektägaren | Medvetet parkerad tills grundpipelinen och målmiljön är tydliga |
 | Spark/Hadoop | Offentliga evaldataset och adapters | Ingen evidens att de är vanliga i den avsedda miljön |
-| Hosting | Railway senare | Fortsatt sista steg |
+| Hosting | Lokal miljö tills vidare | Inget aktivt driftmål |
 
 ## Information som måste fastställas
 

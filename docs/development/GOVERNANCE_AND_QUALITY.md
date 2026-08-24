@@ -17,7 +17,7 @@ hash-synchronized environment passed 291/291 tests, lint, scoped types,
 compileall, prompt budgets, secret scan, `pip check`, dependency audit and SBOM
 generation. Branch coverage was 74.8% repository-wide against a 74% ratchet,
 82.4% for core workflow code against the 80% gate and 97.2% for security/control
-code against the 90% gate. Railway provisioning remains outside the active
+code against the 90% gate. Hosted provisioning remains outside the active
 scope.
 
 For every production release, retain a manifest with test/evaluation results,

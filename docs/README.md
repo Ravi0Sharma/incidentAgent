@@ -32,10 +32,9 @@ from planning history and dated evidence.
 - [`OPERATOR_RUNBOOKS.md`](operations/OPERATOR_RUNBOOKS.md) — migrations, recovery, queue and publication incidents.
 - [`PRODUCTION_READINESS.md`](operations/PRODUCTION_READINESS.md) — authoritative production Definition of Done.
 - [`SECURITY_AND_OPERATIONS.md`](operations/SECURITY_AND_OPERATIONS.md) — controls and operational baseline.
+- [`WEBHOOK_INGRESS.md`](operations/WEBHOOK_INGRESS.md) — signed-alert ingress, source-address and rate-limit policy.
 - [`RELEASE_EVIDENCE.md`](operations/RELEASE_EVIDENCE.md) — release evidence template.
 - [`REVIEWER_GUIDE.md`](operations/REVIEWER_GUIDE.md) — safe human decision guidance.
-- [`RAILWAY_DEVELOPMENT_SETUP.md`](operations/RAILWAY_DEVELOPMENT_SETUP.md) — shared development deployment.
-- [`PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md`](operations/PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md) — long-term hardening plan.
 
 ## Development and governance
 

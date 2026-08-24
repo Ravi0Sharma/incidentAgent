@@ -61,7 +61,7 @@ product failure or as release evidence.
 - The local OpenAI provider key is present; it is not a telemetry connector,
   publisher, or reviewer credential and was not used by this validation suite.
 - Tests use fixtures/replays and the disposable local MySQL database.
-- No Railway, container, Procfile, or Sites hosting configuration was found.
+- No hosted deployment, container, Procfile, or Sites hosting configuration was found.
 - No hosted/public endpoint is asserted by this record.
 - No external publishing or remediation was exercised.
 
@@ -76,11 +76,11 @@ The complete, ordered backlog is
 - production identity, retention, recovery, worker, observability, deployment,
   load, shadow, pilot, and GA evidence remain open;
 - exact-draft external publication approval is not implemented;
-- Kafka, automated remediation, and Railway are deliberately deferred.
+- Kafka, automated remediation, and hosted deployment are deliberately deferred.
 
 ## Accepted Local-Safe boundary
 
 Local-Safe v0.1 is a fixture/replay-only local decision-support prototype. It
 may not ingest production telemetry, expose a hosted service, publish to
 external systems, or be represented as Shadow-Ready or production-ready.
-Railway remains excluded. Production work resumes from the master checklist.
+Hosted deployment remains excluded. Production work resumes from the master checklist.

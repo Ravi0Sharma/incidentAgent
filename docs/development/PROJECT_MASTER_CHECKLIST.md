@@ -1,6 +1,7 @@
 # Projektets masterchecklista
 
-Senast inventerad: 2026-08-09  
+Senast inventerad: 2026-08-24
+
 Aktivt mål: **Local-Safe v0.1**  
 Auktoritativ kravlista: [`PRODUCTION_READINESS.md`](../operations/PRODUCTION_READINESS.md)
 
@@ -10,21 +11,21 @@ parkeringsregister; den här filen är fortfarande den enda aktiva arbetskön.
 
 Det här dokumentet är projektets enda arbetskö. Det ersätter inte
 acceptanskriterierna i `PRODUCTION_READINESS.md`, utan grupperar dem i en ordning
-som går att genomföra och bocka av. Railway ligger sist.
+som går att genomföra och bocka av. Ingen hostad deployment är aktiv just nu.
 
 ## Hur mycket återstår?
 
 | Mått | Klart | Öppet | Totalt |
 | --- | ---: | ---: | ---: |
-| Alla checkboxrader i readiness-dokumentet | 196 | 194 | 390 |
-| Primära krav med stabilt ID | 70 | **162** | 232 |
+| Alla checkboxrader i readiness-dokumentet | 199 | 192 | 391 |
+| Primära krav med stabilt ID | 72 | **160** | 232 |
 | Dubblettfria Shadow/Pilot/GA-grindar | 0 | 32 | 32 |
 
-Den råa checklistan är alltså 50,3 procent ikryssad. Bara 30,2 procent av de
-primära produktionskraven är formellt stängda. Det betyder inte att 69,8 procent
+Den råa checklistan är alltså 50,9 procent ikryssad. Bara 31,0 procent av de
+primära produktionskraven är formellt stängda. Det betyder inte att 69,0 procent
 av koden saknas: flera öppna produktionskrav har redan en fungerande lokal del,
 men saknar exempelvis verklig målmiljö, lastprov, säkerhetsbeslut eller
-driftbevis. Det sanningsenliga återstående talet är **162 primärkrav**, samlade i
+driftbevis. Det sanningsenliga återstående talet är **160 primärkrav**, samlade i
 arbetsbatcherna nedan. De 32 releasegrindarna räknas inte en gång till.
 
 ## Regler för att bocka av
@@ -36,7 +37,7 @@ arbetsbatcherna nedan. De 32 releasegrindarna räknas inte en gång till.
 - Ett avsiktligt uppskjutet arbete är fortfarande `[ ]`, inte `[x]`.
 - Börja inte nästa fas om den förutsätter ett ännu öppet beslut eller bevis i
   föregående fas.
-- Postmortem, minne, extern publicering, remediation, Kafka och Railway får inte
+- Postmortem, minne, extern publicering, remediation, Kafka och hostad deployment får inte
   dra fokus från den aktiva pre-review-pipelinen.
 
 ## Redan verifierad grund
@@ -45,21 +46,6 @@ Detta är befintlig grund, inte påståenden om production readiness.
 
 - [x] Label-last ingest, gruppering, timeline och evidenspaket körs mot Hadoop,
       HDFS_v1 och OpenStack utan att facit läcker in i modellen.
-- [x] Alla 14 LogHub 2.0-arkiv är checksumme- och integritetsverifierade. HDFS,
-      Spark, OpenStack, ZooKeeper och Linux är uppackade; full råformatsaudit
-      hittade och rättade generell Spark-retention för 500 otidsstämplade
-      exceptions samt ZooKeeper-parsning av 5 582 nästlade trådfält. Se
-      `LOGHUB_2_EVALUATION_2026-08-09.md`.
-- [x] Label-last LogHub 2.0-grind över full Spark-korpus och ZooKeeper är körd:
-      Spark grouping precision/recall 1,0000/0,9764, ZooKeeper 1,0000/1,0000,
-      nio av nio deterministiska grounding-pass och två av två OpenAI-anrop med
-      korrekt abstention. Ingen ZooKeeper-specialregel lades till utan verkligt
-      support-scope. Spark ordering-proveniens rättades till det kanoniska
-      `timestamp_ordering_scope`.
-- [x] Linux/syslog parser- och privacygrind: 23 921/23 921 rader parsade med
-      `year_missing` och `not_comparable` (inte RCA-/LLM-berättigad). Generell
-      redaktion av syslog-identiteter och normalisering av inbäddade tidsstämplar
-      höjde template-recall från 0,6541 till 0,7831 utan precisionstapp.
 - [x] Typade observationer, impact-policy, kandidater, grounding och ärlig
       abstention är implementerade.
 - [x] Review-gaten delar beslutslogik mellan API och HTML; supported review kan
@@ -77,8 +63,11 @@ Detta är befintlig grund, inte påståenden om production readiness.
       fixture/replay-only.
 - [x] Promptbudgetkontrollen passerar; postmortem-prompten är 3 743 tecken mot
       taket 6 000.
-- [x] Senaste dokumenterade lokala regression är 291/291 tester och review-
-      scenarierna är 3/3.
+- [x] Senaste dokumenterade lokala regression är 349/349 tester och review-
+      scenarierna är 3/3. Ett explicit OpenAI-test med 100 000 syntetiska
+      webhookhändelser och två workers gav 12 analysjobb/revisioner, 12
+      lyckade provideranrop och 0 dead letters; incidentbudget spärrade 6
+      senare anrop till deterministisk fallback.
 
 ## Fas 0 – stäng nuvarande lokala milstolpe
 
@@ -88,8 +77,9 @@ Detta är befintlig grund, inte påståenden om production readiness.
       i en closure-fil. Exit: alla fem punkter i `SAFE_COMPLETION_PLAN.md` har
       daterat bevis och beslutet säger uttryckligen “inte Shadow/production”.
       Tekniskt bevis och stängningsbeslut finns i
-      [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-09.md).
-      Namngiven release owner krävs först för Shadow/produktion.
+      [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-09.md)
+      och den aktuella evidensuppdateringen i
+      [`LOCAL_SAFE_CLOSURE_2026-08-24.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-24.md).
 
 ## Fas 1 – förbättra pipelinen fram till och med review
 
@@ -132,7 +122,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       steps. Review-sidan visar nu en begränsad, escaped diff för tillagd,
       korrigerad och borttagen evidens samt kandidatens rank/confidence/score-
       ändring. En positiv read-only-policy stoppar okända/muterande steg och
-      falska executed-action-claims; senaste 291/291 regressionstester passerar.
+      falska executed-action-claims; senaste 349/349 regressionstester passerar.
       RCA/postmortem-grounding och service-specifika rule-packbeslut återstår
       innan batchen kan stängas. Rule packs är uttryckligen parkerade tills
       faktiska tjänster, ägare och vanligaste incidenttyper är kända; generiska
@@ -148,8 +138,10 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       sparas utan promptinnehåll med stage, provider, modell, request-ID,
       parametrar, token usage/reservation, latens, finish-/stopporsak och kostnad.
       Budgetgränser och återstående budget visas i review; shadow/production
-      vägrar starta utan positiv USD-gräns och tokenpriser. Senaste 291/291
-      tester och
+      vägrar starta utan positiv USD-gräns och tokenpriser. Ett 100 000-event
+      test med två workers och verkliga OpenAI-anrop konvergerade till 12
+      revisioner och 12 lyckade provideranrop utan dead letters; 6 senare
+      anrop blockerades av incidentbudgeten. Senaste 349/349 tester och
       promptbudgetkontrollen passerar. Strict RCA/postmortem-output,
       kooperativ cancellation och bred prompt-injection-corpus återstår.
 - [ ] **M05 – Reviewrevision och audit.** Servern avvisar stale, obehörig eller
@@ -184,7 +176,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       failar säkert och tool/publisher/report-sinks redigerar secrets. Den
       värdesuppressande repository-scannern passerar utan att läsa `.env`;
       hash-låset ger giltig CycloneDX-SBOM och dagens `pip-audit` rapporterar
-      inga kända sårbarheter. Den låsta fullsviten passerar 291/291.
+      inga kända sårbarheter. Den låsta fullsviten passerar 349/349.
 - [ ] **M08 – Reproducerbar CI-kvalitetsgate.** Lint, typer, enhet/integration,
       coverage-trösklar, promptbudget, säkerhetsskanning och reproducerbara
       beroenden körs automatiskt. Exit: en ren checkout ger samma gröna gate.
@@ -193,9 +185,9 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       Ruff, avgränsad mypy, compileall, promptbudget, secret scan, full MySQL-
       suite, branch coverage, dependency audit och SBOM är samlade i
       `scripts/quality_gate.py` och `.github/workflows/quality.yml`. Låst lokal
-      körning är grön med 291/291 tester. Hela repositoryt mäter 74,5 procent
+      körning är grön med 349/349 tester. Hela repositoryt mäter 75,4 procent
       och har en 74-procentsratchet; kärnscopet mäter 82,2 procent mot grinden
-      80 och säkerhetskontrollerna 97,2 procent mot grinden 90. Coverage-delen
+      80 och säkerhetskontrollerna 95,9 procent mot grinden 90. Coverage-delen
       av `M08` är därmed stängd. En faktisk ren GitHub Actions-körning återstår
       men är medvetet parkerad i `DEFERRED_WORK_CHECKLIST.md`.
 
@@ -204,19 +196,19 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
 Starta denna fas när den faktiska systemmiljön och datakällorna är kända.
 
 - [ ] **M09 – Support- och säkerhetsmatris.** Bestäm stödda alerttyper,
-      AWS/konto/region/service-gränser, severity/SLO-policy, dataägare och vad
-      systemet uttryckligen inte får göra. Krav: `SCP-003`, `SCP-006`–`SCP-008`,
+      servicegränser, severity/SLO-policy och vad systemet uttryckligen inte
+      får göra. Krav: `SCP-003`, `SCP-006`–`SCP-008`,
       `DOC-008`, `DOC-010`.
 - [ ] **M10 – Första verkliga read-only-källkedjan.** Implementera endast de
-      miljömatchade logg-, metric- och deploy/config-källorna, med least
-      privilege, pagination, rate limit, schema drift och freshness. Kafka
+      miljömatchade logg-, metric- och deploy/config-källorna, med pagination,
+      rate limit, schema drift och freshness. Kafka
       väntar tills målmiljön kräver det. Krav: `SRC-006`–`SRC-016`, `TST-015`.
       Lokal progress: CloudWatch Alarm-state translator, Logs Insights och
       GetMetricData är implementerade bakom en versionerad service-allowlist.
       Okänd service/alarm avvisas före AWS-anrop; polling och pagination är
       begränsade och partial/truncation bevaras i proveniens. Verkliga AWS-
-      credentials/log groups/metrics, IAM-policy, sandbox-E2E och deploykälla
-      återstår, så batchen är fortfarande öppen. Spåret är parkerat enligt
+      credentials/log groups/metrics, sandbox-E2E och deploykälla återstår, så
+      batchen är fortfarande öppen. Spåret är parkerat enligt
       projektbeslut och de lokala standardkällorna är fortsatt Loki/Prometheus.
 - [ ] **M11 – Märkt gold set och evaluator.** Minst 100 representativa incidenter
       eller godkända replays med dubbel SRE-bedömning, disagreement och
@@ -251,40 +243,48 @@ Starta denna fas när den faktiska systemmiljön och datakällorna är kända.
       publicerar durable liveness, förnyar jobb- och incidentlease, dränerar på
       signal och återtar utgångna jobb. Gemensamt kötak omfattar alert,
       reprocess och dead-letter replay. Direkt process-/SQL-bevis finns i
-      `ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`. Multi-host staging, last,
-      fairness, circuit breakers och overload-observability återstår.
+      `ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`. Ett separat 100 000-event
+      OpenAI-test bekräftar att 5-minuters incidentbucketing bevarar alla
+      händelser men begränsar arbetet till 12 revisioner/provideranrop.
+      Multi-host staging, SLO-baserad last, fairness, circuit breakers och
+      overload-observability återstår.
 - [ ] **M18 – Operativ observability.** End-to-end context, strukturerade
       redigerade loggar, metrics/traces, SLO-dashboard, alerts, canary och
       skyddad auditåtkomst. Krav: `OBS-003`–`OBS-008`, `OBS-010`–`OBS-012`.
 - [ ] **M19 – Reproducerbar staging/deploy.** Container/build lock,
-      config/secrets per miljö, IaC, migration jobs, CI/CD, health/readiness,
-      kill switches och rollback. Railway väljs först här om det fortfarande är
-      rätt host. Krav: `DEP-004`–`DEP-010`, `DEP-012`–`DEP-014`.
+      config/secrets per miljö, IaC, migration jobs, CI/CD, health/readiness
+      och kill switches. Ett driftmål väljs först här om det fortfarande är
+      nödvändigt. Krav: `DEP-004`–`DEP-010`, `DEP-012`–`DEP-014`.
 - [ ] **M20 – Last, soak, chaos och kapacitet.** Verifiera stora payloads,
       burst, connector/model/database-fel, återstart och minst 24 h soak mot
       SLO/kostnad. Krav: `TST-009`, `TST-016`–`TST-019`.
+      Lokal progress: 100 000 syntetiska, signerade webhookhändelser genom hela
+      API-/tvåworker-/OpenAI-pipelinen gav 12 revisioner, 12 lyckade
+      provideranrop och 0 dead letters. Det saknar ratificerad kapacitet,
+      30-procentig headroom, soak och målmiljöfel, och stänger därför inte
+      kapacitetskraven.
 - [ ] **M21 – Exakt publiceringsapproval och outbox.** Ett postmortem får lämna
       systemet först efter separat exact-draft approval, auth/audit och
       idempotent outbox med partial-failure recovery. Ingen automatisk
       remediation ingår. Krav: `REV-017`, `REV-018`.
-- [ ] **M22 – Dokumentation och operativt ägarskap.** ADR:er, runbooks,
-      reviewerhandbok, data inventory, doc checks, owner/expiry och release-
+- [ ] **M22 – Dokumentation och governance.** ADR:er, runbooks,
+      reviewerhandbok, data inventory, doc checks, review/expiry och release-
       manifest hålls aktuella. Krav: `DOC-002`–`DOC-004`, `DOC-006`, `DOC-007`,
       `DOC-009`, `TST-020`.
 
 ## Fas 4 – releasegrindar
 
 De här grindarna bockas av genom bevis från batcherna ovan; de är inte extra
-implementationer och räknas därför inte in i de 162 primärkraven.
+implementationer och räknas därför inte in i de 160 primärkraven.
 
 - [ ] **M23 – Shadow-Ready-förkrav.** Alla P0-krav för säker read-only shadow,
-      review, data, drift och eval har ägare och bevis.
+      review, data, drift och eval har bevis.
 - [ ] **M24 – Shadowkörning.** Minst 50 representativa incidenter under minst
       14 dagar; noll externa effekter och ratificerade kvalitets-/latensgränser.
 - [ ] **M25 – Kontrollerad pilot.** Begränsade tenants/team, reviewer game day,
-      rollback/kill switches, on-call och signerad release evidence.
+      kill switches och dokumenterad release evidence.
 - [ ] **M26 – GA.** Alla P0/P1-gates, säkerhet/privacy, kapacitet, restore,
-      support och governance är stängda. Railway/deployment är då en
+      support och governance är stängda. Deployment är då en
       driftimplementation, inte ett experiment för att avgöra om pipelinen
       fungerar.
 
@@ -302,7 +302,7 @@ acceptanskriterier finns bara i `PRODUCTION_READINESS.md`.
 | 5 Correlation/hypotheses | 6 | 11 | `COR-007`–`COR-017` |
 | 6 LLM boundary | 6 | 12 | `LLM-007`–`LLM-018` |
 | 7 Memory | 2 | 13 | `MEM-003`–`MEM-015` |
-| 8 Review/postmortem | 5 | 14 | `REV-006`–`REV-019` |
+| 8 Review/postmortem | 7 | 12 | `REV-006`–`REV-019` |
 | 9 Security/privacy | 4 | 14 | `SEC-005`–`SEC-018` |
 | 10 Reliability/recovery | 2 | 15 | `REL-003`–`REL-017` |
 | 11 Observability/audit | 2 | 10 | `OBS-003`–`OBS-012` |
@@ -310,7 +310,7 @@ acceptanskriterier finns bara i `PRODUCTION_READINESS.md`.
 | 13 Performance/cost | 4 | 8 | `PERF-004`–`PERF-006`, `PERF-008`–`PERF-012` |
 | 14 Deploy/operations | 3 | 11 | `DEP-003`–`DEP-010`, `DEP-012`–`DEP-014` |
 | 15 Docs/governance | 1 | 9 | `DOC-002`–`DOC-010` |
-| **Totalt** | **70** | **162** | **232 primärkrav** |
+| **Totalt** | **72** | **160** | **232 primärkrav** |
 
 ## Nästa konkreta arbetsordning
 
@@ -320,5 +320,5 @@ acceptanskriterier finns bara i `PRODUCTION_READINESS.md`.
    design/finputsning och extern publicering.
 4. Stäng `M07`–`M08` innan mer verklig data ansluts.
 5. Be om mer/miljömatchad loggdata först i `M09`–`M12`.
-6. Bygg inte Kafka, större memory, remediation eller Railway innan respektive
+6. Bygg inte Kafka, större memory, remediation eller hostad deployment innan respektive
    senare gate faktiskt kräver det.

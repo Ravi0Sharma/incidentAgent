@@ -8,7 +8,7 @@ incidentlås förhindrar samtidiga revisioner, signaler dränerar aktivt jobb,
 alla jobbingångar använder ett gemensamt kötak och utgångna leases kan tas över
 efter processkrasch.
 
-Detta är inte ett påstående om att en Railway-/produktionsmiljö är färdig.
+Detta är inte ett påstående om att en hostad produktionsmiljö är färdig.
 Multi-host-deploy, faktisk processrestart i staging, last/fairness och
 databasdrift hör fortfarande till paket 5, 7 och 9.
 

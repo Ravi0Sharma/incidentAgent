@@ -12,10 +12,8 @@ working queue and keep the readiness file as the authoritative acceptance list.
 All deliberately postponed work and its exact resume conditions are collected
 in [`DEFERRED_WORK_CHECKLIST.md`](DEFERRED_WORK_CHECKLIST.md); it is a parking
 register, not a competing work queue.
-The prioritized hardening sequence and Railway migration gates live in
-[`PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md`](../operations/PRODUCTION_HARDENING_AND_RAILWAY_PLAN.md).
 The dated blind OpenAI portfolio, full pre-review E2E evidence, token usage and
-Railway cost-control finding live in
+cost-control finding live in
 [`OPENAI_LIVE_EVALUATION_2026-08-09.md`](../reports/OPENAI_LIVE_EVALUATION_2026-08-09.md).
 The current verified local runtime result and production-shadow go/no-go are in
 [`SHADOW_READINESS_AUDIT_2026-08-14.md`](../reports/SHADOW_READINESS_AUDIT_2026-08-14.md).
@@ -25,10 +23,8 @@ the Arcvial shadow scope are in
 The independent API/worker boundary, leases, heartbeats, backpressure and
 direct crash-recovery evidence are in
 [`ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`](../reports/ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md).
-The verified LogHub 2.0 intake, full raw-format audit, and parser findings live
-in [`LOGHUB_2_EVALUATION_2026-08-09.md`](../reports/LOGHUB_2_EVALUATION_2026-08-09.md).
-The bounded local-POC closure plan, explicit production deferrals, and
-Railway-excluded scope are in [`SAFE_COMPLETION_PLAN.md`](SAFE_COMPLETION_PLAN.md).
+The bounded local-POC closure plan and explicit production deferrals are in
+[`SAFE_COMPLETION_PLAN.md`](SAFE_COMPLETION_PLAN.md).
 The current support boundary and safety/change policy live in
 [`OPERATING_CONTRACT.md`](../contracts/OPERATING_CONTRACT.md).
 The versioned webhook alert contract and current limits live in
@@ -70,7 +66,7 @@ public-corpus availability; the current decision gate and priority order are in
   restored for a later operated production service.
 - The active completion target is **Local-Safe v0.1**: fixture/replay-only,
   no real production telemetry, no hosted deployment, and no external effects.
-  Shadow-Ready remains a separate future gate; Railway work is explicitly
+  Shadow-Ready remains a separate future gate; hosted deployment is explicitly
   deferred. See `SAFE_COMPLETION_PLAN.md`.
 
 ## Purpose

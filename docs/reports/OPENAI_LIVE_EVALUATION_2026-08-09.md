@@ -1,6 +1,6 @@
 # OpenAI live evaluation – 2026-08-09
 
-Status: **local live-eval complete; not a production or Railway release claim**
+Status: **local live-eval complete; not a production or hosted-release claim**
 
 The model was `gpt-5.6-luna` through the official OpenAI Responses API. Every
 request used `store=false`; dataset truth was joined only after the model
@@ -75,10 +75,10 @@ Source for model availability and list price:
 - `output/full-pre-review-openai-live-2026-08-09.json`
 - `output/full-pre-review-openai-live-2026-08-09/index.html` plus two reviews
 
-## Railway gate
+## Hosted deployment gate
 
 The local AI/data/review path is ready for a deployment-preparation phase, but
-not for an unbounded public deployment. Railway work may start only after a
+not for an unbounded public deployment. Hosted deployment work may start only after a
 cost cap is selected and the already parked hosting inputs are available:
 runtime environment, managed MySQL, secrets, health/readiness configuration
 and review authentication. GitHub automation is not required for another local

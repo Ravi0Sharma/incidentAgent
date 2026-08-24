@@ -23,7 +23,7 @@ data quality, candidate ranking and the review boundary.
 - external publishing remains disabled.
 
 These are not active gates for the current three-scenario review evaluation.
-They should be reinstated before Shadow or Railway deployment.
+They should be reinstated before Shadow or hosted deployment.
 
 ## Observation 2026-07-28
 

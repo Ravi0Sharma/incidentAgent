@@ -18,7 +18,7 @@ rålogg                         7/8 hade terminal status
 ```
 
 Målet för nästa etapp är en mätbar och informationsbevarande pre-review-
-pipeline. Postmortem, review-minne, remediation och Railway ingår inte i denna
+pipeline. Postmortem, review-minne, remediation och hostad deployment ingår inte i denna
 etapp.
 
 Status 2026-07-28:
@@ -642,10 +642,10 @@ att-göra-lista efter att P6 pre-review-gates är gröna:
       kontrakt passerar.
 - [ ] Tool calling mot externa system först med allowlist, budget, audit och
       fail-closed policy.
-- [ ] Railway-deployment sist, efter lokala och shadow-relaterade gates.
+- [ ] Hostad deployment sist, efter lokala och shadow-relaterade gates.
 
-Railway blir nästa driftetapp först när den lokala pipelinen har passerat
-holdout-gates och secrets har roterats och placerats i Railway secrets.
+En eventuell driftetapp startar först när den lokala pipelinen har passerat
+holdout-gates och secrets har roterats och placerats i vald secret manager.
 
 ## Säkerhetsåtgärd före nästa externa körning
 
@@ -669,5 +669,5 @@ P0 scorecard/recoverability
   → typad impact-policy + kontrollerade scenariofacit
   → Apache/OpenSSH + kompletterande kontrollerade scenarier
   → review/remediation
-  → Railway
+  → framtida hosting vid behov
 ```

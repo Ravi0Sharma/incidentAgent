@@ -78,10 +78,8 @@ leveranspaket återstår före och under en sådan körning:
 4. Staging/failure-bevis (paket 9).
 5. Shadow-trial och kvalitetsbeslut (paket 10).
 
-Railway kan vara hosting för API/worker, men nuvarande `Dockerfile` installerar
-från det olåsta `requirements.txt`, kör som root och startar bara API:t.
-Nuvarande `railway.toml` beskriver endast en API-service. Detta är blockerare,
-inte kosmetik.
+En framtida hostad miljö behöver separata API- och workerprocesser. Detta är
+en blockerare för drift, inte kosmetik.
 
 ## Externa beslut och åtkomst som krävs
 

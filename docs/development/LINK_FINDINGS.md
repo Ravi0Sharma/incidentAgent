@@ -190,7 +190,7 @@ Artefakter:
 
 Beslut: OpenAI-kopplingen fungerar nu som ett användbart review- och
 kontraktstest. Nästa steg är fortfarande mer kontrollerad data och ett
-tydligare impact-evidenskontrakt, inte Railway, postmortem eller friare
+tydligare impact-evidenskontrakt, inte hostad deployment, postmortem eller friare
 modellklassificering.
 
 ### Impact-assessment och entity/time-pass
@@ -400,7 +400,7 @@ implementerade funktioner.
    täckning och klassificering separat.
 4. Skapa en prioriterad implementationsplan från detta dokument först när
    baseline-testet visar att modellkopplingen är stabil och mätbar.
-5. Railway och automatisk remediation ligger sist.
+5. Hostad deployment och automatisk remediation ligger sist.
 
 ## Viktigaste slutsatsen
 
@@ -684,7 +684,7 @@ Det här ligger sist:
 - remediation som proposal/dry-run före exekvering;
 - explicit approval, scope, timeout, rollback-plan och audit trail;
 - fail-closed tool-policy;
-- Railway-deployment, secret management, persistens, monitoring och
+- Hostad deployment, secret management, persistens, monitoring och
   rollback först när lokala eval gates passerar.
 
 ### Parkerad men aktiv att-göra-lista

@@ -34,11 +34,6 @@ def main():
         "API startup does not fail closed on unsafe runtime configuration",
     )
 
-    api_railway = (ROOT / "railway.toml").read_text(encoding="utf-8")
-    worker_railway = (ROOT / "railway.worker.toml").read_text(encoding="utf-8")
-    _require("scripts/start_api.py" in api_railway, "Railway API command is missing")
-    _require("scripts/run_worker.py" in worker_railway, "Railway worker command is missing")
-
     dashboard = json.loads(
         (ROOT / "config" / "incident_agent_dashboard.json").read_text(encoding="utf-8")
     )

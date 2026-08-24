@@ -2,7 +2,7 @@
 
 This checkpoint covers the path from alert ingestion through the analysis shown
 to a human reviewer. The local pipeline and bounded OpenAI provider path are
-included. RCA, postmortem generation, publication, and Railway deployment are
+included. RCA, postmortem generation, publication, and hosted deployment are
 deliberately outside this checkpoint.
 
 ## What is implemented
@@ -282,7 +282,7 @@ pre-review gate should additionally prove:
   families; and
 - a typed model response plus independent citation/grounding validation.
 
-Railway remains the final deployment step after these local and provider-sandbox
+Hosted deployment remains the final step after these local and provider-sandbox
 gates pass.
 
 ## Loghub cross-system generalization run
