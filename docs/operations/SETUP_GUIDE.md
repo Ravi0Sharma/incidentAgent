@@ -11,7 +11,7 @@ For the reproducible development/test environment, use the exact bootstrap and
 hash-locked dependency set used by CI:
 
 ```sh
-.venv/bin/python -m pip install pip==26.1.2 setuptools==84.0.0
+.venv/bin/python -m pip install pip==26.2.1 setuptools==84.0.0
 .venv/bin/python -m pip install --require-hashes -r requirements.lock
 ```
 

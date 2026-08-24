@@ -2,7 +2,7 @@
 
 # pip-api (used by pip-audit) depends on pip. Pin it explicitly so the
 # hash-locked install remains valid in minimal CI and Docker images.
-pip==26.1.2
+pip==26.2.1
 setuptools==84.0.0
 
 coverage==7.10.6

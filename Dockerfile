@@ -5,7 +5,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 WORKDIR /build
 COPY requirements.lock ./
-RUN python -m pip install --upgrade pip==26.1.2 setuptools==84.0.0 && \
+RUN python -m pip install --upgrade pip==26.2.1 setuptools==84.0.0 && \
     python -m pip install --require-hashes --prefix=/install -r requirements.lock
 
 FROM python:3.11.15-slim-bookworm AS runtime

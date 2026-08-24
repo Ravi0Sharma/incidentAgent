@@ -33,7 +33,7 @@ python-quality:
   before_script:
     - apt-get update
     - apt-get install --yes --no-install-recommends default-mysql-client
-    - python -m pip install pip==26.1.2 setuptools==84.0.0
+    - python -m pip install pip==26.2.1 setuptools==84.0.0
     - python -m pip install --require-hashes -r requirements.lock
     - |
       for attempt in $(seq 1 30); do
@@ -63,7 +63,7 @@ dependency-security:
   stage: security
   image: python:3.11.15-slim-bookworm
   before_script:
-    - python -m pip install pip==26.1.2 setuptools==84.0.0
+    - python -m pip install pip==26.2.1 setuptools==84.0.0
     - python -m pip install --require-hashes -r requirements.lock
   script:
     - pip-audit -r requirements.lock --require-hashes --format json --output pip-audit.json
@@ -103,4 +103,3 @@ compose-e2e:
     expire_in: 30 days
     paths:
       - compose-e2e.log
-
