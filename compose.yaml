@@ -195,6 +195,33 @@ services:
     networks:
       - incident_backend
 
+  stress:
+    <<: *app-image
+    profiles: ["tools"]
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      <<: *runtime-environment
+      PROCESS_ROLE: worker
+    command:
+      - python
+      - scripts/run_resilience_soak.py
+      - --cycles
+      - "20"
+      - --jobs-per-cycle
+      - "200"
+      - --workers
+      - "8"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    networks:
+      - incident_backend
+
 volumes:
   incident_mysql:
   incident_output:

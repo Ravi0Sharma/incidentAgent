@@ -27,8 +27,8 @@ def validate():
     compose = yaml.safe_load((ROOT / "compose.yaml").read_text(encoding="utf-8"))
     services = compose.get("services", {})
     _require(
-        set(services) == {"mysql", "migrator", "api", "worker-1", "worker-2", "verify"},
-        "Compose services must be MySQL, migrator, API, two workers and verifier",
+        set(services) == {"mysql", "migrator", "api", "worker-1", "worker-2", "verify", "stress"},
+        "Compose services must be MySQL, migrator, API, two workers, verifier and stress probe",
     )
     _require(services["mysql"].get("image") == "mysql:8.4", "MySQL must be pinned to 8.4")
     _require(
@@ -74,6 +74,13 @@ def validate():
     verify_command = services["verify"].get("command", [])
     _require("--local" in verify_command, "Compose verifier must use explicit local mode")
     _require("--expected-min-workers" in verify_command, "Compose verifier must check worker HA")
+    stress = services["stress"]
+    _require(stress.get("profiles") == ["tools"], "stress probe must be opt-in")
+    _require(_environment(stress).get("PROCESS_ROLE") == "worker", "stress probe must use worker identity")
+    _require(_environment(stress).get("PUBLISH_EXTERNAL") == "false", "stress probe may not publish externally")
+    stress_command = stress.get("command", [])
+    _require("scripts/run_resilience_soak.py" in stress_command, "stress probe must use resilience soak")
+    _require("--cycles" in stress_command and "--workers" in stress_command, "stress probe must be multi-cycle and multi-worker")
     _require(
         (ROOT / "docker/mysql/init/001-local-runtime-users.sql").exists(),
         "local database role bootstrap is missing",

@@ -215,6 +215,29 @@ The E2E verifier requires two workers, sends a signed synthetic alert, retries
 the same body, proves deduplication, waits for completion and verifies a durable
 analysis revision.
 
+### One-command local stress test
+
+Run this only against the disposable local Compose environment. It stops any
+running local API/workers first (named volumes are preserved), then starts only
+MySQL, the migrator and an isolated stress runner:
+
+```bash
+docker compose down && docker compose --profile tools run --rm stress
+```
+
+The runner executes 20 cycles of 200 jobs with eight independent child workers
+(**4,020 jobs** in total). Every cycle verifies a cross-process MySQL
+checkpoint, force-kills one worker with `SIGKILL` after its durable effect,
+checks that the job is reclaimed exactly once, and confirms one durable revision
+per job. It refuses to mix with an active queue, cleans up its own probe rows,
+uses no hosted model or external connector, and cannot publish externally.
+
+Afterwards, restart the normal local topology when needed:
+
+```bash
+docker compose up --build --wait
+```
+
 ### Follow logs
 
 ```bash
