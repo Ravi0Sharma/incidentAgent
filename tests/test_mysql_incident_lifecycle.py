@@ -76,6 +76,17 @@ class MySQLIncidentLifecycleTests(unittest.TestCase):
         self.assertEqual(claim_once.call_count, 2)
         sleep.assert_called_once_with(0.01)
 
+    def test_job_completion_retries_a_transient_mysql_deadlock(self):
+        deadlock = pymysql.err.OperationalError(1213, "deadlock")
+        with patch.object(
+            incident_store,
+            "_complete_job_once",
+            side_effect=[deadlock, None],
+        ) as complete_once, patch.object(incident_store.time, "sleep") as sleep:
+            self.assertIsNone(complete_job(17, "retry-worker", {"ok": True}))
+        self.assertEqual(complete_once.call_count, 2)
+        sleep.assert_called_once_with(0.01)
+
     def test_stale_writer_cannot_overwrite_pending_review_or_lifecycle(self):
         pending = registry.add_pending(self.incident_id, {"alertname": "HighLatency"})
         with self.assertRaises(registry.RevisionConflictError):

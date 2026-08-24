@@ -40,6 +40,7 @@ class PublicationStateUncertainError(RuntimeError):
 
 
 REQUIRED_RUNTIME_MIGRATION = "20260824_03_publication_guard"
+TRANSIENT_LOCK_RETRIES = 8
 
 
 def _connection():
@@ -682,7 +683,7 @@ def create_revision(
     job_id=None,
 ):
     """Allocate one revision, retrying transient InnoDB lock conflicts."""
-    for attempt in range(3):
+    for attempt in range(TRANSIENT_LOCK_RETRIES):
         try:
             return _create_revision_once(
                 incident_id,
@@ -693,9 +694,9 @@ def create_revision(
             )
         except pymysql.err.OperationalError as exc:
             error_code = exc.args[0] if exc.args else None
-            if error_code not in {1205, 1213} or attempt == 2:
+            if error_code not in {1205, 1213} or attempt == TRANSIENT_LOCK_RETRIES - 1:
                 raise
-            time.sleep(0.01 * (attempt + 1))
+            time.sleep(min(0.5, 0.01 * (2 ** attempt)))
     raise AssertionError("unreachable revision retry state")
 
 
@@ -1378,14 +1379,14 @@ def claim_next_job(worker_id, lease_seconds=120):
     transaction rollback leaves no partial claim, so retrying the complete
     claim preserves at-most-one active owner for each incident.
     """
-    for attempt in range(3):
+    for attempt in range(TRANSIENT_LOCK_RETRIES):
         try:
             return _claim_next_job_once(worker_id, lease_seconds=lease_seconds)
         except pymysql.err.OperationalError as exc:
             error_code = exc.args[0] if exc.args else None
-            if error_code not in {1205, 1213} or attempt == 2:
+            if error_code not in {1205, 1213} or attempt == TRANSIENT_LOCK_RETRIES - 1:
                 raise
-            time.sleep(0.01 * (attempt + 1))
+            time.sleep(min(0.5, 0.01 * (2 ** attempt)))
     raise AssertionError("unreachable job claim retry state")
 
 
@@ -1422,7 +1423,7 @@ def renew_job_lease(job_id, worker_id, lease_seconds=120):
     return lease_until.isoformat()
 
 
-def complete_job(job_id, worker_id, result=None):
+def _complete_job_once(job_id, worker_id, result=None):
     ensure_schema()
     completed_at = _now()
     with _connection() as conn, conn.cursor() as cur:
@@ -1440,6 +1441,25 @@ def complete_job(job_id, worker_id, result=None):
             (job_id, worker_id),
         )
         conn.commit()
+
+
+def complete_job(job_id, worker_id, result=None):
+    """Complete a leased job, retrying a rolled-back InnoDB deadlock.
+
+    Concurrent workers can briefly deadlock while one finishes a job and
+    another claims a different job for the same incident. MySQL rolls back the
+    whole transaction in that case, so retrying retains the same lease-owner
+    check and cannot duplicate the durable completion effect.
+    """
+    for attempt in range(TRANSIENT_LOCK_RETRIES):
+        try:
+            return _complete_job_once(job_id, worker_id, result=result)
+        except pymysql.err.OperationalError as exc:
+            error_code = exc.args[0] if exc.args else None
+            if error_code not in {1205, 1213} or attempt == TRANSIENT_LOCK_RETRIES - 1:
+                raise
+            time.sleep(min(0.5, 0.01 * (2 ** attempt)))
+    raise AssertionError("unreachable job completion retry state")
 
 
 def fail_job(job, worker_id, error, max_attempts=3, retry_delay_seconds=30):

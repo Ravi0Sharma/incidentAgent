@@ -225,7 +225,10 @@ def run_probe(*, jobs=32, workers=4):
             "0",
         )
         if recovered["completed"] != [crash_job["job_id"]]:
-            raise RuntimeError("the killed job was not recovered exactly once")
+            raise RuntimeError(
+                "the killed job was not recovered exactly once: "
+                f"expected={[crash_job['job_id']]}, recovered={recovered['completed']}"
+            )
 
         for index in range(jobs):
             # Reuse a few incident ids as well as unique ids. This verifies

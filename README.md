@@ -501,7 +501,7 @@ fictional “model accuracy” number.
 
 | Boundary | Current result | What it establishes |
 | --- | --- | --- |
-| Engineering quality gate | **336 tests**; **74.5%** whole-repository, **82.2%** core-path and **95.8%** security-path branch coverage | Code/regression coverage and local runtime behavior, not incident accuracy. |
+| Engineering quality gate | **337 tests**; **74.5%** whole-repository, **82.2%** core-path and **95.8%** security-path branch coverage | Code/regression coverage and local runtime behavior, not incident accuracy. |
 | HDFS 2k grouping | **100%** pair precision; **96.60%** recall; 14/14 source templates retained | Over-merging/fragmentation on one public corpus; template IDs are not incident causes. |
 | HDFS v3/TraceBench grouping | **100%** pair precision; **98.83%** recall; 75/75 labels retained | Generalization of normalized grouping; TraceBench labels are an upstream proxy. |
 | Curated BGL/OpenStack pair gate | **73/73** pairs; 100% precision, recall and specificity | A reviewed normalization contract boundary, not an independent human gold-set. |
