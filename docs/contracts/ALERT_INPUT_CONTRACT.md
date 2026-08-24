@@ -65,11 +65,15 @@ durable audit events remain required by `OBS-004`, `OBS-008`, and `SEC-012`.
 
 The service applies `WEBHOOK_GLOBAL_RATE_LIMIT` and
 `WEBHOOK_CALLER_RATE_LIMIT` within `WEBHOOK_RATE_LIMIT_WINDOW_SECONDS`, returning
-`429` and `Retry-After` when either limit is exceeded. The caller key is a
-signed-source supplied `X-Incident-Client-Id` when present, otherwise the
-direct client address. Counters are stored as hashed keys in MySQL and are
-shared by workers. Trusted proxy identity, caller fairness and load proof
-remain `ING-018` work.
+`429` and `Retry-After` when either limit is exceeded. The caller key is the
+direct client address. `X-Forwarded-For` is used only when that direct peer is
+listed in `WEBHOOK_TRUSTED_PROXY_CIDRS`; a caller-controlled client-ID header
+is never used. When `WEBHOOK_ALLOWED_SOURCE_CIDRS` is configured, only the
+resolved address ranges may submit a correctly signed request. Counters are
+stored as hashed keys in MySQL and are shared by workers.
+
+See [`WEBHOOK_INGRESS.md`](../operations/WEBHOOK_INGRESS.md) for deployment
+and reverse-proxy guidance.
 
 ## Lifecycle Boundary
 

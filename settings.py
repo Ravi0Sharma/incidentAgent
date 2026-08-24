@@ -215,7 +215,7 @@ CLOUDWATCH_SOURCE_MAP_PATH = os.getenv(
 CLOUDWATCH_LOG_QUERY_LIMIT = int(
     os.getenv(
         "CLOUDWATCH_LOG_QUERY_LIMIT",
-        "1000",
+        "5000",
     )
 )
 
@@ -296,7 +296,7 @@ DEPLOY_LOOKBACK_HOURS = int(
 LOG_QUERY_LIMIT = int(
     os.getenv(
         "LOG_QUERY_LIMIT",
-        "1000"
+        "5000"
     )
 )
 
@@ -310,7 +310,24 @@ LOG_TOOL_QUERY_LIMIT = int(
 INITIAL_LOG_QUERY_LIMIT = int(
     os.getenv(
         "INITIAL_LOG_QUERY_LIMIT",
-        "300"
+        "500"
+    )
+)
+
+# The hard cap protects the source and durable incident state. Initial evidence
+# is deliberately severity-aware so critical incidents retain a wider,
+# time-stratified and high-signal sample instead of a fixed last-N result.
+SEV1_LOG_QUERY_LIMIT = int(
+    os.getenv(
+        "SEV1_LOG_QUERY_LIMIT",
+        "3000",
+    )
+)
+
+SEV2_LOG_QUERY_LIMIT = int(
+    os.getenv(
+        "SEV2_LOG_QUERY_LIMIT",
+        "1500",
     )
 )
 
@@ -489,6 +506,21 @@ WEBHOOK_SHARED_SECRET = os.getenv(
 
 WEBHOOK_REPLAY_WINDOW_SECONDS = int(
     os.getenv("WEBHOOK_REPLAY_WINDOW_SECONDS", "300")
+)
+
+# Direct source addresses are used for caller rate limits. When the API is
+# behind a reverse proxy, X-Forwarded-For is trusted only when the direct peer
+# is in WEBHOOK_TRUSTED_PROXY_CIDRS. An optional source CIDR list then limits
+# which resolved addresses may submit signed alerts.
+WEBHOOK_TRUSTED_PROXY_CIDRS = tuple(
+    value.strip()
+    for value in os.getenv("WEBHOOK_TRUSTED_PROXY_CIDRS", "").split(",")
+    if value.strip()
+)
+WEBHOOK_ALLOWED_SOURCE_CIDRS = tuple(
+    value.strip()
+    for value in os.getenv("WEBHOOK_ALLOWED_SOURCE_CIDRS", "").split(",")
+    if value.strip()
 )
 
 REVIEW_USERNAME = os.getenv(

@@ -1,9 +1,12 @@
 from settings import (
     INITIAL_LOG_QUERY_LIMIT,
+    LOG_QUERY_LIMIT,
     MAX_EXPANSION_ROUNDS,
     MAX_INVESTIGATION_ELAPSED_SECONDS,
     MAX_INVESTIGATION_RESULT_BYTES,
     MAX_SCOPE_SERVICES,
+    SEV1_LOG_QUERY_LIMIT,
+    SEV2_LOG_QUERY_LIMIT,
 )
 from utils.model_usage import initialize_deadline
 
@@ -20,15 +23,18 @@ def plan_collection(state):
         or "unknown"
     )
     requested_limit = INITIAL_LOG_QUERY_LIMIT
-    if severity in ("SEV1", "SEV2"):
-        requested_limit = max(requested_limit, 500)
+    if severity == "SEV1":
+        requested_limit = max(requested_limit, SEV1_LOG_QUERY_LIMIT)
+    elif severity == "SEV2":
+        requested_limit = max(requested_limit, SEV2_LOG_QUERY_LIMIT)
+    requested_limit = min(max(int(requested_limit), 1), LOG_QUERY_LIMIT)
 
     return {
         "analysis_deadline": initialize_deadline(
             state.get("analysis_deadline")
         ),
         "collection_plan": {
-            "strategy": "summary_then_targeted_evidence",
+            "strategy": "severity_aware_time_and_signal_stratified_evidence",
             "alert_service": service,
             "log_fetch_limit": requested_limit,
             "exact_log_count_required": True,

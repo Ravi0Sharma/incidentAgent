@@ -5,6 +5,7 @@ import hmac
 import json
 import unittest
 import uuid
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from webhook import api
@@ -43,9 +44,10 @@ def _validate(payload, **overrides):
 
 
 class _Request:
-    def __init__(self, body, headers=None):
+    def __init__(self, body, headers=None, client_host="127.0.0.1"):
         self._body = body
         self.headers = headers or {}
+        self.client = SimpleNamespace(host=client_host)
 
     async def body(self):
         return self._body
@@ -130,6 +132,33 @@ class AlertContractTests(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertGreaterEqual(retry_after, 1)
         self.assertEqual(rate_limit.allow("caller", 2, 10, now=10), (True, 0))
+
+    def test_ingress_uses_direct_or_trusted_proxy_address_not_client_header(self):
+        direct = _Request(
+            b"{}",
+            {"x-incident-client-id": "spoofed"},
+            client_host="198.51.100.20",
+        )
+        proxied = _Request(
+            b"{}",
+            {"x-forwarded-for": "203.0.113.44, 10.0.0.2"},
+            client_host="10.0.0.2",
+        )
+        forged_forwarded = _Request(
+            b"{}",
+            {"x-forwarded-for": "203.0.113.44"},
+            client_host="192.0.2.10",
+        )
+        with patch.multiple(
+            api,
+            WEBHOOK_TRUSTED_PROXY_CIDRS=("10.0.0.0/8",),
+            WEBHOOK_ALLOWED_SOURCE_CIDRS=("203.0.113.0/24",),
+        ):
+            self.assertEqual(api._rate_limit_key(direct), "198.51.100.20")
+            self.assertEqual(api._webhook_source_address(proxied), "203.0.113.44")
+            self.assertTrue(api._webhook_source_allowed(proxied))
+            self.assertEqual(api._webhook_source_address(forged_forwarded), "192.0.2.10")
+            self.assertFalse(api._webhook_source_allowed(forged_forwarded))
 
     def test_body_limit_returns_413_before_body_is_read(self):
         request = _Request(

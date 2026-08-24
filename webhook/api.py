@@ -2,6 +2,7 @@ import html
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import secrets
 from urllib.parse import urlencode, urlsplit
@@ -64,9 +65,11 @@ from settings import (
     SUPPORTED_INCIDENT_ENVIRONMENTS,
     WEBHOOK_SHARED_SECRET,
     WEBHOOK_REPLAY_WINDOW_SECONDS,
+    WEBHOOK_ALLOWED_SOURCE_CIDRS,
     WEBHOOK_GLOBAL_RATE_LIMIT,
     WEBHOOK_CALLER_RATE_LIMIT,
     WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
+    WEBHOOK_TRUSTED_PROXY_CIDRS,
     WEBHOOK_WORKER_BATCH_SIZE,
     API_DRAIN_JOBS,
     CANARY_SHARED_SECRET,
@@ -427,10 +430,50 @@ def _validate_webhook_replay(request):
     )
 
 
-def _rate_limit_key(request):
-    return request.headers.get("x-incident-client-id") or getattr(
-        getattr(request, "client", None), "host", "anonymous"
+def _valid_ip(value):
+    try:
+        return ipaddress.ip_address(str(value).strip())
+    except ValueError:
+        return None
+
+
+def _matches_cidr(address, cidrs):
+    if address is None:
+        return False
+    for cidr in cidrs:
+        try:
+            if address in ipaddress.ip_network(str(cidr), strict=False):
+                return True
+        except ValueError:
+            # Secure-runtime configuration rejects malformed CIDRs at startup.
+            continue
+    return False
+
+
+def _webhook_source_address(request):
+    """Resolve the caller address without trusting spoofable proxy headers."""
+    direct = _valid_ip(
+        getattr(getattr(request, "client", None), "host", "")
     )
+    if not _matches_cidr(direct, WEBHOOK_TRUSTED_PROXY_CIDRS):
+        return str(direct) if direct is not None else ""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    candidate = forwarded.split(",", 1)[0].strip() if forwarded else ""
+    resolved = _valid_ip(candidate)
+    return str(resolved) if resolved is not None else ""
+
+
+def _webhook_source_allowed(request):
+    if not WEBHOOK_ALLOWED_SOURCE_CIDRS:
+        return True
+    return _matches_cidr(
+        _valid_ip(_webhook_source_address(request)),
+        WEBHOOK_ALLOWED_SOURCE_CIDRS,
+    )
+
+
+def _rate_limit_key(request):
+    return _webhook_source_address(request) or "unknown"
 
 
 def _allow_webhook_request(request):
@@ -1365,6 +1408,15 @@ async def alerts(request: Request, background_tasks: BackgroundTasks = None):
             status_code=401,
             content={
                 "error": "Invalid or missing webhook signature."
+            },
+        )
+    if not _webhook_source_allowed(request):
+        record_rejection("webhook_source_not_allowed")
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "Webhook source is not allowed.",
+                "code": "webhook_source_not_allowed",
             },
         )
     try:

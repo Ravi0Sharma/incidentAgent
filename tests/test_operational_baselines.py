@@ -53,7 +53,7 @@ def _production_config(**overrides):
         "CORS_ORIGINS": ["https://incident.example.test"],
         "CHECKPOINTER": "mysql",
         "DEPLOYMENT_TENANT_ID": "arcvial",
-        "SECRETS_PROVIDER": "railway",
+        "SECRETS_PROVIDER": "vault",
         "PUBLIC_BASE_URL": "https://incident.example.test",
         "PROCESS_ROLE": "api",
         "MYSQL_API_USER": "incident_api",
@@ -105,6 +105,14 @@ def _production_config(**overrides):
 
 
 class OperationalBaselineTests(unittest.TestCase):
+    def test_secure_runtime_rejects_malformed_webhook_source_cidr(self):
+        with self.assertRaisesRegex(ValueError, "WEBHOOK_ALLOWED_SOURCE_CIDRS"):
+            validate_runtime_config(
+                _production_config(
+                    WEBHOOK_ALLOWED_SOURCE_CIDRS=("not-a-network",),
+                )
+            )
+
     def test_api_import_creates_missing_static_output_directory(self):
         with tempfile.TemporaryDirectory() as root:
             output_dir = Path(root) / "new" / "output"

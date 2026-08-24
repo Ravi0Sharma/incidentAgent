@@ -305,6 +305,32 @@ class ProductionFlowTests(unittest.TestCase):
         )
         self.assertEqual(len(logs), 7)
 
+    def test_critical_collection_requests_a_wider_relevant_sample(self):
+        with (
+            patch("graph.nodes.plan_collection.LOG_QUERY_LIMIT", 5_000),
+            patch("graph.nodes.plan_collection.INITIAL_LOG_QUERY_LIMIT", 500),
+            patch("graph.nodes.plan_collection.SEV1_LOG_QUERY_LIMIT", 3_000),
+            patch("graph.nodes.plan_collection.SEV2_LOG_QUERY_LIMIT", 1_500),
+        ):
+            sev1 = plan_collection({
+                "severity": "SEV1",
+                "alert": {"service": "payments"},
+            })["collection_plan"]
+            sev2 = plan_collection({
+                "severity": "SEV2",
+                "alert": {"service": "payments"},
+            })["collection_plan"]
+            sev3 = plan_collection({
+                "severity": "SEV3",
+                "alert": {"service": "payments"},
+            })["collection_plan"]
+        self.assertEqual(
+            sev1["strategy"],
+            "severity_aware_time_and_signal_stratified_evidence",
+        )
+        self.assertGreater(sev1["log_fetch_limit"], sev2["log_fetch_limit"])
+        self.assertGreater(sev2["log_fetch_limit"], sev3["log_fetch_limit"])
+
     def test_deterministic_candidate_is_grounded_and_flags_close_ranking(self):
         groups = [{
             "event_id": "log-db",

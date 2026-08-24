@@ -1,5 +1,6 @@
 """Fail-fast validation for the configuration combinations we support today."""
 
+import ipaddress
 from urllib.parse import urlparse
 
 
@@ -27,6 +28,22 @@ def _egress_host_allowed(host, allowlist):
         elif host == allowed:
             return True
     return False
+
+
+def _configured_cidrs(config, name):
+    values = getattr(config, name, ()) or ()
+    if isinstance(values, str):
+        values = values.split(",")
+    errors = []
+    for value in values:
+        candidate = str(value).strip()
+        if not candidate:
+            continue
+        try:
+            ipaddress.ip_network(candidate, strict=False)
+        except ValueError:
+            errors.append(f"{name} contains an invalid CIDR: {candidate}")
+    return errors
 
 
 def validate_runtime_config(config):
@@ -73,7 +90,7 @@ def validate_runtime_config(config):
         getattr(config, "SECRETS_PROVIDER", "environment")
     ).lower()
     if secrets_provider not in {
-        "aws-secrets-manager", "railway", "vault", "kubernetes"
+        "aws-secrets-manager", "vault", "kubernetes"
     }:
         errors.append(
             f"SECRETS_PROVIDER must identify an approved managed provider in {mode}"
@@ -92,6 +109,8 @@ def validate_runtime_config(config):
             "WEBHOOK_SHARED_SECRET is "
             f"required in {mode}"
         )
+    errors.extend(_configured_cidrs(config, "WEBHOOK_TRUSTED_PROXY_CIDRS"))
+    errors.extend(_configured_cidrs(config, "WEBHOOK_ALLOWED_SOURCE_CIDRS"))
     if getattr(config, "REVIEW_AUTH_MODE", "") != "oidc":
         errors.append(f"REVIEW_AUTH_MODE must be oidc in {mode}")
     for name in ("OIDC_ISSUER", "OIDC_JWKS_URL", "OIDC_METADATA_URL"):
