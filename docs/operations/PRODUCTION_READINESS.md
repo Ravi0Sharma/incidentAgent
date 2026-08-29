@@ -27,7 +27,7 @@ the authoritative acceptance list.
 
 ## Audit Snapshot
 
-**Audit date:** 2026-08-24
+**Audit baseline:** 2026-08-24, revalidated locally on 2026-08-29
 
 **Current maturity:** locally production-hardened candidate; not approved for
 external production traffic until environment-specific staging gates pass.
@@ -57,7 +57,7 @@ claim. The suite ran against the configured local MySQL test database.
 
 Current local baseline:
 
-- `python scripts/quality_gate.py`: 349/349 test methods
+- `python scripts/quality_gate.py`: 345/345 test methods
   passed, including MySQL lifecycle/persistence, security/observability, API,
   evidence, hypothesis, connector-policy, CloudWatch adapter, Hadoop, HDFS_v1,
   OpenStack, signal-retention and adversarial-boundary coverage. The same run
@@ -74,10 +74,9 @@ Current local checks:
   settings.py tests utils webhook`: passed.
 - `.venv/bin/python scripts/check_prompt_budget.py`: passed. Interpretation was
   5 064 characters, RCA 4 047, postmortem 3 743, and the evidence pack 4 192.
-- The original Local-Safe closure record and the current evidence refresh are in
-  [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-09.md)
-  and
-  [`LOCAL_SAFE_CLOSURE_2026-08-24.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-24.md).
+- The retained evidence refresh is
+  [`LOCAL_SAFE_CLOSURE_2026-08-24.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-24.md);
+  the current interpretation is in [`EVALUATION.md`](../EVALUATION.md).
 - Opt-in OpenAI bucket-load evidence: 100,000 synthetic webhook events with two
   workers produced 12 durable analysis jobs/revisions, 12 successful provider
   calls and 0 dead letters. The per-incident 12-call budget then blocked 6
@@ -674,8 +673,8 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
   thread to resume after a single-process restart.
 - [x] `MEM-002` Normalized/redacted incident logs are stored separately from the
   compact working evidence pack.
-- [x] `MEM-003a` The target versioned incident/revision record boundary is
-  documented in `MEMORY_AND_REVIEW_CONTRACT.md`; durable implementation remains open.
+- [x] `MEM-003a` The versioned incident/revision record boundary is documented
+  in `MEMORY_AND_REVIEW_CONTRACT.md` and implemented for local MySQL runtime.
 - [x] `MEM-004a` The required append-only observation and supersession invariants
   are documented before a persistence backend is selected.
 - [ ] `MEM-003` `P0` Replace the implicit state dictionary as the long-term
@@ -881,20 +880,19 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
 
 ## 10. State, Reliability, And Failure Recovery
 
-- [x] `REL-001` The local SQLite checkpointer survives construction of a new
-  saver instance, verified by an automated test.
+- [x] `REL-001` A legacy SQLite saver retains isolated unit coverage. The
+  supported multi-process runtime and all deployment modes use MySQL.
 - [x] `REL-002` Evidence-source failures degrade source status instead of
   immediately terminating collection.
 - [x] `REL-005a` Current source and model retries are bounded by explicit retry,
   backoff and circuit policies; full retry classification remains open.
 - [x] `REL-009a` `/readyz` now evaluates the supported secure configuration
   baseline separately from minimal `/healthz` liveness.
-- [ ] `REL-003` `P0` Use an officially supported production checkpointer/store
-  such as MySQL with transactions, connection pooling, migrations, and
-  multi-worker semantics.
-- [x] `REL-003a` A real local MySQL 8.4-backed checkpointer now persists the
-  LangGraph checkpoint tables when `CHECKPOINTER=mysql`; durable migrations,
-  pooling and multi-worker semantics remain open.
+- [x] `REL-003` The runtime uses MySQL transactions, role-aware connection
+  pooling, versioned migrations and multi-worker-safe graph checkpoints.
+- [x] `REL-003a` The local MySQL 8.4 checkpointer is exercised across real
+  processes, concurrent writers and lease recovery. Managed multi-host
+  failover remains an environment gate.
 - [ ] `REL-004` `P0` Complete the durable execution model around the existing
   MySQL queue and worker lease. Work is at-least-once, every node is
   idempotent, and only one active revision writer owns an incident at a time.
@@ -1188,7 +1186,7 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
   observations, evidence, hypotheses, analysis revisions, reviews, knowledge,
   and publications.
 - [x] `DOC-003b` `CANONICAL_SCHEMAS.md` documents implemented records and
-  invariants; unimplemented knowledge/publication records are explicit.
+  invariants, including curated knowledge and guarded publication attempts.
 - [ ] `DOC-004` `P0` Create ADRs for production storage/checkpointer, queue,
   identity/RBAC, model/provider, knowledge retrieval, object storage, retention,
   and external publication.

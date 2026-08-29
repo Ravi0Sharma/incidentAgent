@@ -63,7 +63,7 @@ Detta är befintlig grund, inte påståenden om production readiness.
       fixture/replay-only.
 - [x] Promptbudgetkontrollen passerar; postmortem-prompten är 3 743 tecken mot
       taket 6 000.
-- [x] Senaste dokumenterade lokala regression är 349/349 tester och review-
+- [x] Senaste lokala regression är 345/345 tester och review-
       scenarierna är 3/3. Ett explicit OpenAI-test med 100 000 syntetiska
       webhookhändelser och två workers gav 12 analysjobb/revisioner, 12
       lyckade provideranrop och 0 dead letters; incidentbudget spärrade 6
@@ -77,9 +77,9 @@ Detta är befintlig grund, inte påståenden om production readiness.
       i en closure-fil. Exit: alla fem punkter i `SAFE_COMPLETION_PLAN.md` har
       daterat bevis och beslutet säger uttryckligen “inte Shadow/production”.
       Tekniskt bevis och stängningsbeslut finns i
-      [`LOCAL_SAFE_CLOSURE_2026-08-09.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-09.md)
-      och den aktuella evidensuppdateringen i
-      [`LOCAL_SAFE_CLOSURE_2026-08-24.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-24.md).
+      den aktuella evidensuppdateringen i
+      [`LOCAL_SAFE_CLOSURE_2026-08-24.md`](../reports/LOCAL_SAFE_CLOSURE_2026-08-24.md)
+      och den konsoliderade [`EVALUATION.md`](../EVALUATION.md).
 
 ## Fas 1 – förbättra pipelinen fram till och med review
 
@@ -107,10 +107,9 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       Alla connectorrader redigeras nu före checkpointad graph-state. Alert,
       grupperad logg, metric och deploy lagras i samma canonical envelope med
       UTC/originaltid, lineage, klassificering och dubbla integritetskontroller.
-      Direkt HTTP/MySQL-canary för det kommande Arcvial-scope gav noll råa
-      canaryträffar och 7/7 giltiga evidensrader; se
-      `ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md`. Verkliga Arcvial-loggar måste
-      passera samma prov när paket 1–2 kopplas in.
+      En sanerad HTTP/MySQL-canary gav noll råa canaryträffar och 7/7 giltiga
+      evidensrader. Samma prov måste upprepas mot varje godkänd verklig
+      loggkälla innan shadow-trafik tillåts.
 - [ ] **M03 – Korrelation och oberoende grounding.** Slutlig typad hypotesmodell,
       mekanism, stöd, motsägelser, entity/tid-relationer, reranking och
       fail-closed citation validation. Exit: inga okända eller rollfelaktiga
@@ -122,7 +121,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       steps. Review-sidan visar nu en begränsad, escaped diff för tillagd,
       korrigerad och borttagen evidens samt kandidatens rank/confidence/score-
       ändring. En positiv read-only-policy stoppar okända/muterande steg och
-      falska executed-action-claims; senaste 349/349 regressionstester passerar.
+      falska executed-action-claims; senaste 345/345 regressionstester passerar.
       RCA/postmortem-grounding och service-specifika rule-packbeslut återstår
       innan batchen kan stängas. Rule packs är uttryckligen parkerade tills
       faktiska tjänster, ägare och vanligaste incidenttyper är kända; generiska
@@ -141,7 +140,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       vägrar starta utan positiv USD-gräns och tokenpriser. Ett 100 000-event
       test med två workers och verkliga OpenAI-anrop konvergerade till 12
       revisioner och 12 lyckade provideranrop utan dead letters; 6 senare
-      anrop blockerades av incidentbudgeten. Senaste 349/349 tester och
+      anrop blockerades av incidentbudgeten. Senaste 345/345 tester och
       promptbudgetkontrollen passerar. Strict RCA/postmortem-output,
       kooperativ cancellation och bred prompt-injection-corpus återstår.
 - [ ] **M05 – Reviewrevision och audit.** Servern avvisar stale, obehörig eller
@@ -176,7 +175,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       failar säkert och tool/publisher/report-sinks redigerar secrets. Den
       värdesuppressande repository-scannern passerar utan att läsa `.env`;
       hash-låset ger giltig CycloneDX-SBOM och dagens `pip-audit` rapporterar
-      inga kända sårbarheter. Den låsta fullsviten passerar 349/349.
+      inga kända sårbarheter. Den låsta fullsviten passerar 345/345.
 - [ ] **M08 – Reproducerbar CI-kvalitetsgate.** Lint, typer, enhet/integration,
       coverage-trösklar, promptbudget, säkerhetsskanning och reproducerbara
       beroenden körs automatiskt. Exit: en ren checkout ger samma gröna gate.
@@ -185,7 +184,7 @@ Detta är nästa aktiva genomförandefas. Arbeta uppifrån och ned.
       Ruff, avgränsad mypy, compileall, promptbudget, secret scan, full MySQL-
       suite, branch coverage, dependency audit och SBOM är samlade i
       `scripts/quality_gate.py` och `.github/workflows/quality.yml`. Låst lokal
-      körning är grön med 349/349 tester. Hela repositoryt mäter 75,4 procent
+      körning är grön med 345/345 tester. Hela repositoryt mäter 75,4 procent
       och har en 74-procentsratchet; kärnscopet mäter 82,2 procent mot grinden
       80 och säkerhetskontrollerna 95,9 procent mot grinden 90. Coverage-delen
       av `M08` är därmed stängd. En faktisk ren GitHub Actions-körning återstår
@@ -243,7 +242,7 @@ Starta denna fas när den faktiska systemmiljön och datakällorna är kända.
       publicerar durable liveness, förnyar jobb- och incidentlease, dränerar på
       signal och återtar utgångna jobb. Gemensamt kötak omfattar alert,
       reprocess och dead-letter replay. Direkt process-/SQL-bevis finns i
-      `ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`. Ett separat 100 000-event
+      process-/SQL-testerna och operator-runbooken. Ett separat 100 000-event
       OpenAI-test bekräftar att 5-minuters incidentbucketing bevarar alla
       händelser men begränsar arbetet till 12 revisioner/provideranrop.
       Multi-host staging, SLO-baserad last, fairness, circuit breakers och

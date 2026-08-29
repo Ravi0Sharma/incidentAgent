@@ -1,71 +1,73 @@
-# Security and operations baseline (v0)
+# Security and operations
 
-## Trust boundaries and field handling
+## Trust and data handling
 
-Untrusted inputs are Alertmanager payloads, source evidence, model output and
-reviewer feedback. Before normal incident state is formed, input shape and
-size are validated. Secret/PII-like values are recursively redacted before the
-normalized evidence/report path. The model gets a compact evidence context,
-not raw logs. External publishing is disabled by default.
+Webhook payloads, connector responses, model output, reviewer feedback and
+publisher responses are untrusted.
 
-Data classes are: **restricted** (secrets, credentials, customer identifiers),
-**confidential** (raw incident evidence and reviewer feedback), and
-**internal** (redacted metrics, source status and report metadata). Restricted
-data must never reach models, traces, logs, HTML reports or publishers. The
-remaining provider/region/retention decision is P0 and must be recorded before
-an OpenAI provider is enabled.
+Input shape and size are validated before incident state is created.
+Secret/PII-like values are recursively redacted before persistence, prompts,
+logs and reports. The model receives a compact evidence pack, not unrestricted
+raw logs. External publishing is disabled by default.
 
-## Current runtime guardrails
+Data classes:
 
-`/healthz` is liveness only. `/readyz` validates the supported production
-baseline and verifies MySQL plus the queue schema and, when API drain is off,
-a fresh durable heartbeat from an independent worker: webhook/reviewer
-OIDC configuration, separate session/CSRF secrets, non-default redaction salt,
-explicit CORS origins, an HTTPS model endpoint and a MySQL checkpointer. Shadow
-forbids external publishing; production publishing additionally requires
-configured allowlisted providers and the separate final-review interrupt.
-Unsafe combinations return not-ready. Local development may use Basic Auth; shadow and
-production require OIDC authorization-code login or a validated Bearer token.
-Signed secure sessions expose only issuer, subject, expiry and roles. Viewer,
-decision and operator roles are configured separately, and review mutations
-require an identity/incident-bound CSRF token.
+| Class | Examples | Rule |
+| --- | --- | --- |
+| Restricted | Secrets, credentials, customer identifiers | Must not reach models, traces, reports or publishers |
+| Confidential | Raw incident evidence and reviewer feedback | Access-controlled, redacted and retained by deployment policy |
+| Internal | Redacted metrics, source state and report metadata | Still treated as untrusted data |
 
-Every model completion uses a bounded timeout/retry/circuit policy. Source
-connectors have their own bounded policies. A model failure falls back to a
-deterministic/degraded result; it does not skip human review. Structured JSON
-application events include timestamp, severity, environment, incident/revision,
-node/source/request context and a redacted error category.
+## Runtime guardrails
 
-Audit records are separate redacted MySQL records for reviewer decisions,
-invalid reviewer requests, failed reviewer authentication, dead-letter replay,
-and requested reprocessing. They are append-only at the application layer,
-but are not immutable/WORM storage and do not prove operator-level tamper
-resistance. `GET /metrics` exposes process-local Prometheus-format counters
-and duration summaries; it must be scraped into a shared metrics backend for
-multi-worker dashboards and alerts.
+- `/healthz` reports process liveness only.
+- `/readyz` validates secure configuration, current migration, MySQL/queue and
+  required worker heartbeats.
+- Local development may use Basic Auth; secure modes require OIDC and explicit
+  viewer, decision and operator roles.
+- Browser mutations require an incident-bound CSRF token.
+- Model and connector calls have timeout, retry, circuit and incident budgets.
+- Provider/model failure cannot skip human review or enable publication.
+- External publication requires separate exact-draft approval and a durable
+  attempt guard.
+- Ambiguous external acknowledgement blocks automatic retry.
 
-## Required production controls
+Structured application events include incident/revision, node/source/request
+context and a redacted error category. Audit records cover review decisions,
+invalid review requests, failed authentication, dead-letter replay and
+reprocessing.
 
-The OIDC/RBAC/CSRF boundary is implemented locally but still requires a real
-identity-provider registration and staging security test. Hash-locked Python
-dependencies, repository secret scanning, dependency audit and CycloneDX SBOM
-generation now run in CI. A scheduled dependency-security workflow preserves
-the audit/SBOM evidence without uploading CodeQL results to GitHub Code
-Scanning, which requires GitHub Advanced Security for this private repository.
-The durable MySQL queue, renewable
-job/incident leases, worker heartbeat, bounded admission, dead-letter path,
-role-aware pooling, versioned migrations, egress allowlisting and repeatable
-backup/restore drill are implemented locally. Publication requires separate
-exact-draft approval and a durable at-most-once attempt guard; ambiguous
-provider delivery fails closed for operator reconciliation. Managed at-rest
-keys, real secret-manager injection/rotation, image scanning, immutable audit
-storage, per-destination partial-failure recovery, production dashboards/alert
-routing and a real staging canary remain environment-specific blockers.
+Application audit rows are append-only but are not immutable/WORM storage. A
+production deployment needs organizational audit retention and operator-level
+tamper controls.
 
-Threat-model coverage and proof are defined by `A09-T01`–`A09-T12`, recovery by
-`A10-T01`–`A10-T12`, and observability by `A11-T01`–`A11-T10`.
+## Secrets
 
-For the AWS POC, a cloud secret means a credential stored in AWS Secrets
-Manager (or Parameter Store) and supplied to the running service through an
-approved IAM role, rather than committed to the repository or kept in a local
-`.env` file. This integration is not needed for the local POC yet.
+Do not commit `.env`, private CloudWatch source maps, provider keys, database
+credentials, certificates, dumps or raw incident data. The repository ignores
+the common local forms and includes a pattern-based scanner:
+
+```bash
+.venv/bin/python scripts/check_repository_secrets.py
+```
+
+Use the target platform's secret manager and runtime identity. For AWS, prefer
+an IAM role and the standard boto3 credential chain over static access keys.
+Rotate a credential immediately if it may have been exposed outside the
+ignored local file.
+
+## Production controls still required
+
+- Real identity-provider registration and staging authorization tests.
+- Managed secret injection and rotation.
+- Encryption at rest with managed keys.
+- Retention, deletion, legal hold and tenant-isolation policy.
+- Immutable audit storage.
+- Container/IaC scanning and independent security review.
+- Shared metrics, dashboards and alert routing across processes.
+- Target-environment backup, failover and measured RPO/RTO.
+- Provider-specific publication reconciliation.
+- Approved data-region, retention and model-provider policy.
+
+The complete environment gate is
+[PRODUCTION_READINESS.md](PRODUCTION_READINESS.md).

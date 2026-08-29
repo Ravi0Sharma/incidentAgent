@@ -16,7 +16,7 @@
   <!-- Intake -->
   <rect class="card box" x="490" y="125" width="620" height="115"/>
   <text class="h" x="800" y="172">Alert webhook (trigger)</text>
-  <text class="p" x="800" y="207">signed synthetic alert today · CloudWatch logs later</text>
+  <text class="p" x="800" y="207">signed Grafana/Alertmanager alert · synthetic local canary</text>
 
   <path class="line" d="M800 240 V295"/>
   <rect class="card box" x="490" y="295" width="620" height="135"/>
@@ -54,7 +54,7 @@
   <path class="line" d="M800 1163 V1260"/>
   <path class="line" d="M800 1163 V1210 H1300 V1260"/>
   <rect class="card box" x="105" y="1260" width="390" height="125"/>
-  <text class="h" x="300" y="1308">gather_logs</text><text class="p" x="300" y="1340">bounded log query</text><text class="small" x="300" y="1365">local now · CloudWatch later</text>
+  <text class="h" x="300" y="1308">gather_logs</text><text class="p" x="300" y="1340">bounded log query</text><text class="small" x="300" y="1365">fixture/Loki · opt-in CloudWatch API path</text>
   <rect class="card box" x="605" y="1260" width="390" height="125"/>
   <text class="h" x="800" y="1308">gather_metrics</text><text class="p" x="800" y="1340">bounded metric query</text><text class="small" x="800" y="1365">quality + source status</text>
   <rect class="card box" x="1105" y="1260" width="390" height="125"/>

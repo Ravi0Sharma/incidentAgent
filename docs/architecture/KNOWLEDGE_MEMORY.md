@@ -39,5 +39,6 @@ and timestamp. In production the local Basic/no-auth identity must be replaced
 by verified SSO/RBAC claims.
 
 `incident_postmortem_drafts` preserves generated drafts and reviewer edits as
-immutable versions linked by `supersedes_draft_id`. It is not an external
-publisher or publishing approval system.
+immutable versions linked by `supersedes_draft_id`. A separate exact-draft
+decision and durable attempt guard govern external publication; ambiguous
+delivery still requires operator reconciliation.

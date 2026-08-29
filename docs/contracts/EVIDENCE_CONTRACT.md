@@ -1,142 +1,82 @@
-# Incident Agent - Evidence Contract
+# Evidence contract
 
-**Current normalized log schema:** `incident-log/v1` with canonical evidence
-metadata `incident-evidence/v1`
+Evidence is normalized, redacted, versioned data. It is not a model claim.
 
-This document describes the current evidence boundary and the target production
-contract for Area 4 in `PRODUCTION_READINESS.md`.
+## Canonical record
 
-## Current Normalized Log Record
-
-Every normalized log record carries:
+Normalized log evidence uses `incident-log/v1` and the cross-source envelope
+`incident-evidence/v1`.
 
 | Field | Meaning |
 | --- | --- |
-| `evidence_schema_version` | Current normalized log schema version |
-| `timestamp` | Canonical UTC event timestamp when the source time is usable |
-| `message` | Redacted message string |
-| `raw_labels` | Recursively redacted source labels |
-| `labels` | Canonical labels selected through `config/log_schemas.yaml` |
-| `schema` | Matched source schema name |
-| `evidence_id` | Stable ID derived from redacted immutable log content |
-| `canonical_evidence_schema_version` | Cross-source canonical schema version |
-| `event_time` / `received_at` | UTC event and collection time, when the source timestamp is valid |
-| `original_timestamp` / `original_timezone` | Preserved source time representation for audit |
-| `clock_quality` | `verified`, `assumed_utc`, `invalid`, `future`, or `missing` |
+| `evidence_id` | Stable identifier derived from redacted immutable content |
+| `timestamp` | Canonical UTC event time when usable |
+| `original_timestamp`, `original_timezone` | Source representation retained for audit |
+| `received_at` | Collection time |
+| `clock_quality` | `verified`, `assumed_utc`, `invalid`, `future` or `missing` |
+| `message` | Redacted message |
+| `labels`, `raw_labels` | Canonical and recursively redacted source labels |
+| `schema` | Matched source schema |
 | `integrity_hash` | SHA-256 over the redacted canonical payload |
+| provenance | Source, sanitized query ID, window, limits and collection revision |
 
-Canonical labels can additionally carry source-provided `workload_id` and
-`execution_id`. The Hadoop adapter derives stable SHA-256-based scoped values
-instead of exposing raw application/container IDs. Aggregated groups retain
-these values only as bounded dimension summaries for incident-local entity
-matching.
+Invalid or far-future timestamps are counted in source quality and quarantined
+from causal processing. Original clock metadata remains available for audit.
 
-Grouping derives a deterministic `event_id` from the aggregation key. The
-source record also carries a stable `evidence_id`, canonical source lineage and
-an integrity hash. Invalid or more-than-five-minutes-future timestamps are
-counted in source quality and quarantined from the log pipeline; canonical
-records retain original clock metadata for audit where normalization occurs.
+## Grouping and signal retention
 
-Repeated normalized shapes carry `event-burst/v1`: onset, end, duration,
-repetitions, distinct time buckets and peak bucket/count. This preserves
-volume and timing while preventing repeated copies from being treated as
-independent causal proof.
+Repeated shapes are grouped deterministically. `event-burst/v1` preserves
+onset, end, duration, repetition count, distinct time buckets and peak count so
+compression does not turn repeated copies into independent causal proof.
 
-Direct fault observations also carry `impact-assessment/v1`. It separates
-fault-event IDs from impact, adverse-outcome, outcome, recovery and
-contradiction IDs. `signal-impact-link/v2` records explicit entity match and
-time relation. Success on a matching workload can contradict impact; an
-adverse event on a conflicting execution is excluded from impact support.
+Direct fault observations become `observed-signal/v1`, not root causes.
+`impact-assessment/v1` and `signal-impact-link/v2` keep fault, adverse impact,
+general outcome, recovery, success and contradiction IDs in separate roles.
+Entity or time mismatch cannot establish impact.
 
-## Query Lineage And Source Quality
+## Query lineage and quality
 
-Collection provenance is versioned as `connector-provenance/v2`, with a stable
-query ID derived from a sanitized `incident-query/v1` replay specification.
-The specification records operation, service, allowlisted filters, window,
-limits and sampling policy without backend credentials or unrestricted raw
-query text.
+`connector-provenance/v2` includes a stable query ID derived from the sanitized
+`incident-query/v1` replay specification. Credentials, unrestricted raw query
+text and provider response bodies are excluded.
 
-`source-quality/v1` records input/usable/quarantined counts, duplicates,
-parse/source errors, missing required fields and timestamps, timestamp quality,
-event range and freshness. Log groups and evidence-graph nodes retain the
-source query IDs and source schema IDs that produced them. Review HTML shows
-these fields as compact source cards, with sanitized replay details collapsed.
+`source-quality/v1` records usable/quarantined counts, duplicates, parse/source
+errors, timestamp quality, freshness and truncation. These fields survive log
+grouping, timeline construction and evidence-graph creation.
 
-## Targeted Investigation Revisions
+## Revisions
 
-`investigation-loop/v1` is the bounded control record for evidence expansion.
-It carries the current and maximum round, service/depth boundary, retained
-result-byte and elapsed-time limits, continuation decision and explicit stop
-reason.
+Every analysis revision stores the exact evidence membership it used.
+Unchanged evidence reuses its immutable record. Corrected content creates a
+new version linked to the superseded record. Conflicting content for the same
+evidence ID fails closed.
 
-Every completed targeted round appends an `investigation-revision/v1` record to
-checkpointed incident state. The record contains query IDs, redacted compact
-tool-result summaries, integrated-record count, the resulting deterministic
-candidate snapshot and the continue/stop decision. Raw samples still follow the
-canonical evidence path; the revision is audit metadata, not a second raw-log
-store. The complete revision list is included in the immutable analysis
-snapshot used by review.
+Bounded follow-up collection uses `investigation-loop/v1`. Each completed round
+records its query IDs, compact redacted result, integrated-record count,
+candidate snapshot, limits and continue/stop reason. Raw samples still pass
+through the same canonical evidence path.
 
-## Redaction Boundary
+## Redaction and untrusted data
 
-Before alert state is built, labels are redacted/pseudonymized, annotations are
-recursively redacted, and message-like values such as `generatorURL` are passed
-through message redaction. Structured nested values, lists, and tuples are
-handled recursively.
+Alerts, logs, labels, annotations, connector metadata, commit messages,
+reviewer feedback and retrieved knowledge are untrusted data. Recursive
+redaction runs before persistence, prompts, logs and reports. Model prompts
+place evidence inside an explicit untrusted-data boundary and state that it
+cannot change policy or authorize tools.
 
-This closes the current raw-annotation path. It does **not** complete `EVD-009`:
-review feedback, exceptions, tool results, connector metadata, traces, reports,
-memory, and every external publisher still need a unified sink-level redaction
-test.
+This application boundary does not replace provider access controls, sink-level
+redaction tests or production retention policy.
 
-## Target Production Evidence Contract
+## Claim rule
 
-Every evidence item must eventually include a stable ID, source/backend/tenant,
-sanitized query provenance, collection revision, event time, receive time,
-service/environment, security classification, integrity hash, and supersession
-link where corrected. Claims must cite compatible evidence IDs.
+A factual claim must cite known evidence IDs whose typed roles support that
+claim. Unknown or incompatible IDs are rejected. Missing, stale, contradictory
+or excessively truncated evidence must lower confidence or produce abstention.
 
-The canonical record now covers stable IDs, lineage, collection revision,
-event/receive time, service/environment, classification and integrity hashes
-at the normalized log boundary. Connector rows are recursively redacted before
-they can enter checkpointed graph state. Metrics and deploys retain original
-source time/zone while exposing canonical UTC event time and content-derived
-evidence IDs.
+Primary verification lives in:
 
-Local MySQL analysis snapshots persist alert, grouped-log, metric and deploy
-observations inside the same `incident-evidence/v1` envelope. The envelope
-contains the redacted observation payload and an independently checked inner
-integrity hash. Snapshot creation fails closed if evidence-graph membership
-differs from canonical revision membership or if one revision contains the
-same evidence ID with conflicting content. Local snapshots also keep an
-append-only, queryable evidence membership: unchanged content reuses the same
-immutable record and corrected content creates a version with a supersession
-link. The stored content hash is verified before revision diffing and review;
-missing membership or modified payload blocks the decision. Production
-migration/retention/tamper-evident audit proof, cross-source citation validation
-and production-wide sink tests remain open.
-
-## Untrusted Evidence Rule
-
-Logs, labels, annotations, commit messages, reviewer feedback, and retrieved
-knowledge are data, never instructions. All current model prompt builders
-serialize such values inside an explicit `<untrusted-evidence>` boundary after
-redaction; prompts state that the enclosed content cannot alter policy or
-invoke tools. This is a local guardrail, not a substitute for provider-level
-tool authorization.
-
-## Test Mapping
-
-- `A04-T01` subset: `tests/test_evidence_contract.py` validates the schema
-  version and canonical normalization.
-- `A04-T02` subset: `tests/test_evidence_contract.py` validates recursive alert
-  annotation and URL redaction.
-- `A04-T03` subset: `tests/test_evidence_contract.py` validates stable IDs,
-  hashes, UTC timestamp handling and future/invalid timestamp quarantine.
-- `A04-T04` subset: `tests/test_evidence_contract.py` validates prompt
-  delimiting for untrusted evidence. Cross-source citations, append-only
-  persistence, sampling and revision behavior remain open.
-- Query redaction, quality quarantine, stable query IDs and lineage through
-  grouping/graph/review are covered by `tests/test_source_provenance.py`.
-- Bounded A→B expansion, revision append, rerouting and honest limit/failure
-  stop reasons are covered by `tests/test_investigation_loop.py`.
+- `tests/test_evidence_contract.py`;
+- `tests/test_source_provenance.py`;
+- `tests/test_investigation_loop.py`;
+- `tests/test_claim_grounding.py`; and
+- `tests/test_signal_retention.py`.

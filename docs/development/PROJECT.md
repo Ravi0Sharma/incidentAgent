@@ -12,17 +12,10 @@ working queue and keep the readiness file as the authoritative acceptance list.
 All deliberately postponed work and its exact resume conditions are collected
 in [`DEFERRED_WORK_CHECKLIST.md`](DEFERRED_WORK_CHECKLIST.md); it is a parking
 register, not a competing work queue.
-The dated blind OpenAI portfolio, full pre-review E2E evidence, token usage and
-cost-control finding live in
-[`OPENAI_LIVE_EVALUATION_2026-08-09.md`](../reports/OPENAI_LIVE_EVALUATION_2026-08-09.md).
-The current verified local runtime result and production-shadow go/no-go are in
-[`SHADOW_READINESS_AUDIT_2026-08-14.md`](../reports/SHADOW_READINESS_AUDIT_2026-08-14.md).
-The local canonical-evidence completion and required real-log revalidation for
-the Arcvial shadow scope are in
-[`ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md`](../reports/ARCVIAL_SHADOW_PACKAGE_3_2026-08-14.md).
-The independent API/worker boundary, leases, heartbeats, backpressure and
-direct crash-recovery evidence are in
-[`ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md`](../reports/ARCVIAL_SHADOW_PACKAGE_4_2026-08-14.md).
+The current result summary and label-last method are in
+[`EVALUATION.md`](../EVALUATION.md). Detailed pre-review and bounded live-model
+evidence remain in [`PRE_REVIEW_EVALUATION.md`](../reports/PRE_REVIEW_EVALUATION.md)
+and [`OPENAI_LIVE_EVALUATION_2026-08-09.md`](../reports/OPENAI_LIVE_EVALUATION_2026-08-09.md).
 The bounded local-POC closure plan and explicit production deferrals are in
 [`SAFE_COMPLETION_PLAN.md`](SAFE_COMPLETION_PLAN.md).
 The current support boundary and safety/change policy live in
@@ -57,9 +50,10 @@ public-corpus availability; the current decision gate and priority order are in
 
 - The durable relational store is **MySQL**. `CHECKPOINTER=mysql` uses the
   real local MySQL 8+ saver; no SQLite or simulated runtime mode is supported.
-- The intended POC trigger is an error alert from **Amazon CloudWatch**. The
-  currently implemented Grafana/Alertmanager webhook remains the local input
-  adapter until a CloudWatch adapter is built.
+- The HTTP intake currently accepts Grafana/Alertmanager-shaped alerts. The
+  opt-in CloudWatch evidence path uses real boto3 clients but public tests use
+  sanitized fakes; the standalone EventBridge translator is not yet wired to
+  the HTTP route.
 - POC reports are written only to the configured local `output/` folder. No
   Slack, GitHub, GitLab, ticket, or other external publishing is in scope.
 - Named ownership and formal SLO governance are not POC scope. They may be

@@ -1,50 +1,86 @@
-# Memory and review contract (v0)
+# Review and memory contract
 
-This document makes the current local implementation explicit. It is a bridge
-to the production schemas in `PRODUCTION_READINESS.md`, not evidence that the
-P0 production memory system is finished. The implemented MySQL record details
-and remaining boundary are in `KNOWLEDGE_MEMORY.md`.
+The system separates immutable incident history, curated knowledge and human
+decisions. Model output never becomes durable knowledge or an approved result
+by itself.
 
 ## Incident memory
 
-The current incident identity is `incident_id`. Its local LangGraph checkpoint
-is the resumable workflow state; redacted normalized logs and the compact
-evidence pack are deliberately separate. MySQL now persists append-only event
-records, incident revisions, compact analysis-revision snapshots, reviewer
-decisions, and draft versions. It does not yet replace every workflow-state
-field with a production-owned schema or provide retention/authorization policy.
+MySQL keeps append-only incident events and versioned analysis revisions. Each
+analysis revision records its predecessor, triggering event, exact evidence
+membership, deterministic candidate snapshot, data-quality state and
+code/prompt/model context. A correction creates a new revision instead of
+rewriting previous evidence.
 
-Every future analysis revision must contain: `revision_id`, `incident_id`,
-`previous_revision_id`, `created_at`, the exact evidence IDs considered, the
-candidate IDs/ranks, model/prompt metadata, and why it supersedes the prior
-revision. Observations must be append-only; correction must create a new
-revision rather than rewrite prior evidence.
+Raw logs are not copied into prompts or long-lived knowledge. The analysis
+snapshot retains redacted canonical evidence and content hashes needed to
+reproduce what the reviewer saw.
 
-Knowledge is outside the v0 runtime. Only an explicitly human-approved
-postmortem, reviewed runbook, service record, or tested rule may become
-knowledge. Retrieval must filter by authorization, tenant, service,
-environment, security class and expiry before ranking; a miss or outage must
-not block investigation.
+## Curated knowledge
 
-## Review
+Only concise records from an approved source may enter `curated_knowledge`:
 
-The workflow stops before RCA and postmortem generation. The current API
-accepts only `approved` or `rejected`; an approval must select a candidate rank
-that exists in the saved deterministic candidate set. Invalid selections are
-rejected and recorded as a redacted MySQL append-only audit event. Feedback is bounded
-to 2,000 characters and starts a revised interpretation.
+- reviewed postmortem;
+- reviewed runbook;
+- governed service metadata; or
+- tested failure rule.
 
-The audit baseline records a timestamp, incident ID, decision, selected
-rank and redacted feedback. MySQL also retains the pending/analysis revision,
-candidate/evidence snapshot, locally available reviewer identity and request
-correlation ID. It is not an immutable organization audit ledger: verified SSO
-identity, separate document approval and transactional publication remain P0
-work.
+Every record needs source provenance, approval identity/reference, tenant,
+security class and expiry metadata. Retrieval filters authorization, tenant,
+security class, service, environment, active state and expiry before ranking.
+A miss or retrieval failure must not block incident analysis.
 
-## Retention and authorization decisions still required
+Corrections create a new record and supersede the old one. Deletion removes a
+record from retrieval but keeps the audit transition. Production retention,
+legal hold, encryption and tenant authorization remain deployment gates.
 
-Before production, nominate owners for retention/legal hold/export/deletion,
-define RPO/RTO, encrypt every durable store, and enforce authorization at every
-read/write/context boundary. These requirements map to `MEM-003`–`MEM-012` and
-`REV-006`–`REV-015`; test methods are `A07-T01`–`A07-T10` and
-`A08-T01`–`A08-T12` in `TEST_STRATEGY.md`.
+## Analysis review
+
+The graph pauses before RCA and postmortem drafting. The reviewer sees the
+analysis revision, evidence, contradictions, ranked candidates, uncertainty
+and gaps.
+
+A decision must target the current `pending_revision`. MySQL locks that row and
+allows one decision winner. A stale browser or second reviewer receives
+`409 stale_incident_revision` instead of applying a decision to newer
+evidence.
+
+The reviewer may approve, reject or request more evidence where supported by
+the current route. Feedback is bounded and redacted. Approval must select a
+candidate that exists in the saved candidate set; an abstained analysis cannot
+be approved as a supported root cause.
+
+## Draft and publication review
+
+Analysis approval creates a versioned local postmortem draft. This does not
+authorize external publication.
+
+A separate publication decision binds to the exact draft version and SHA-256
+digest. Editing the draft invalidates an earlier publication approval. Before
+calling a publisher, MySQL records a unique attempt. A completed attempt is
+deduplicated; ambiguous provider acknowledgement blocks automatic retry for
+operator reconciliation.
+
+`PUBLISH_EXTERNAL=false` keeps all output local even after approval.
+
+## Reviewer checklist
+
+Approve only when the selected explanation:
+
+- cites known compatible evidence;
+- states a plausible mechanism without claiming proof;
+- exposes contradictory evidence and missing sources;
+- distinguishes confidence from causality; and
+- proposes only safe verification steps.
+
+Reject or request more evidence when citations are weak, sources failed,
+candidates are materially tied, contradictions are unresolved or the page is
+stale. Reload after a `409` response.
+
+## Audit boundary
+
+Review decisions record time, incident/revision, selected candidate, displayed
+evidence, redacted rationale, reviewer identity and request correlation ID.
+These are append-only application records, not immutable/WORM audit storage.
+Real identity-provider registration and immutable organizational audit storage
+remain production requirements.

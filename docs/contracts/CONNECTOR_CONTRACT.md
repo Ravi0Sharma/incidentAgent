@@ -1,97 +1,83 @@
-# Incident Agent - Connector Contract
+# Connector contract
 
-> This is the common behavioral contract for telemetry and change connectors.
-> It documents the current implementation boundary and the target interface for
-> Area 3 in `PRODUCTION_READINESS.md`.
+Connectors are bounded, read-only evidence sources. Deployment configuration
+selects a connector and its scope; an alert cannot select endpoints,
+credentials or unrestricted provider queries.
 
-## Current Connectors
+## Implemented connectors
 
-| Connector | Current read capability | Current bounded behavior | Production gap |
+| Connector | Capability | Main bound | Public verification boundary |
 | --- | --- | --- | --- |
-| Loki | Log samples, counts, targeted search, service discovery | Time window, query/sample limits, versioned query provenance and record-quality accounting | Real-backend contract suite and pagination |
-| Prometheus | Error rate, p95 latency, request rate | Incident window, fixed metric set, versioned query provenance and freshness accounting | Real-backend contract suite and baseline/seasonality |
-| GitHub | Recent deployment-like records | Lookback window and result cap | Must prove records are actual production deploys, not only repository metadata |
-| Slack | Publish a separately approved postmortem notification | Final publish interrupt, durable at-most-once attempt guard and fail-closed uncertain state | Real workspace contract and operator reconciliation rehearsal |
-| CloudWatch Logs Insights | Allowlisted service log groups with a fixed, bounded query | Max 50 groups, fixed result cap, bounded polling, explicit terminal failures | Real AWS sandbox, IAM scope and representative log-shape contract |
-| CloudWatch GetMetricData | Allowlisted namespaces, names, statistics and dimensions | Max 500 configured queries, bounded pagination and partial-data marking | Real AWS sandbox, IAM scope, freshness and metric semantic validation |
+| Loki | Log counts, samples and targeted search | Incident window and query/sample caps | Local mock plus contract tests; real-backend suite not included |
+| Prometheus | Error rate, p95 latency and request rate | Fixed metrics and incident window | Local mock plus contract tests; real-backend suite not included |
+| GitHub-compatible API | Recent deployment-like records | Lookback window and result cap | Mocked unless explicitly configured |
+| CloudWatch Logs Insights | Allowlisted service log groups and fixed query | 50 groups, result limit and polling budget | Real boto3 path; AWS-shaped fake clients in tests |
+| CloudWatch GetMetricData | Allowlisted metric definitions | 500 queries and bounded pages | Real boto3 path; AWS-shaped fake clients in tests |
+| Slack | Separately approved postmortem notification | Exact-draft approval and durable attempt guard | Mocked unless explicitly configured |
 
-CloudWatch is the selected first production telemetry boundary. Loki and
-Prometheus remain useful local/evaluation connectors; enabling CloudWatch is an
-operator configuration choice (`LOG_SOURCE`/`METRIC_SOURCE`) and cannot be
-controlled by an incoming alarm. `config/cloudwatch_sources.example.yaml`
-documents the versioned allowlist. It deliberately contains no credentials.
+The default Compose stack disables all external connectors. Missing local Loki,
+Prometheus or GitHub configuration uses deterministic fixture data. Mocks are
+development behavior, not evidence that a provider is production-ready.
 
-Mocks are development tools only. A connector is not production-approved until
-its `A03-T01` through `A03-T06` tests pass against an approved sandbox or
-ephemeral backend.
+CloudWatch configuration and its exact test boundary are documented in
+[CLOUDWATCH.md](../operations/CLOUDWATCH.md).
 
-## Request Policy
+## Request policy
 
-Every HTTP connector calls `utils.resilience.request(source, ...)`. The policy
-is selected by source name from `SOURCE_REQUEST_POLICIES` in `settings.py`.
+Each source has bounded timeouts, retry attempts, backoff and an in-process
+circuit-open period. Per-source configuration overrides the global defaults.
+An incident-wide deadline and tool budget provide an additional bound.
 
-| Policy field | Meaning |
-| --- | --- |
-| `timeout_seconds` | Maximum HTTP request time for that source |
-| `retry_attempts` | Total attempts for transient HTTP failures |
-| `retry_backoff_seconds` | Linear backoff multiplier between attempts |
-| `circuit_open_seconds` | Time the in-process circuit remains open after repeated failed requests |
+Connectors must return one of:
 
-The global `SOURCE_*` values are defaults. `LOKI_*`, `PROMETHEUS_*`,
-`GITHUB_*`, and `SLACK_*` environment variables override them per source.
+- `ok`;
+- `empty`;
+- `partial`;
+- `stale`;
+- `forbidden`;
+- `rate_limited`;
+- `invalid_query`; or
+- `failed`.
 
-## Target Result Contract
+An optional source failure becomes an explicit evidence gap. It may lower
+confidence or force abstention, but it cannot silently become an empty result.
 
-Every future connector must provide or allow the collector to derive:
+## Provenance
 
-- source name and backend/tenant identity;
-- requested time window and collection time;
-- bounded result count, fetched sample count, and truncation/exactness state;
-- typed result status: `ok`, `empty`, `partial`, `stale`, `forbidden`,
-  `rate_limited`, `invalid_query`, or `failed`;
-- sanitized diagnostic category and source request ID where available; and
-- cancellation/deadline behavior that respects the source policy.
+Each collection result includes a `connector-provenance/v2` envelope with:
 
-The current collectors now emit the target typed result status and a redacted
-provenance envelope at the graph boundary. `partial` is used when a bounded
-request or one metric query yields incomplete evidence; `empty` means the
-connector completed successfully with no matching data. Authentication,
-validation and rate-limit HTTP responses are mapped to `forbidden`,
-`invalid_query`, and `rate_limited` without persisting a raw URL, query, or
-provider response body. Real-provider pagination, freshness measurements and
-credential-scoping verification remain open.
+- source schema and connector version;
+- sanitized backend identity;
+- stable query ID and fingerprint;
+- incident window, operation, service, allowlisted filters and limits;
+- collection revision/time;
+- matched, fetched and retained counts;
+- truncation/partial state; and
+- sanitized provider request ID where available.
 
-## Current Provenance And Quality Envelopes
+The replay specification is `incident-query/v1`. It contains enough sanitized
+structure to understand the query without exposing credentials, raw provider
+URLs or unrestricted query text.
 
-Each source status contains a `connector-provenance/v2` object with:
+## Source quality
 
-- explicit source schema and connector version;
-- sanitized backend identity and optional tenant;
-- stable `query_id` and fingerprint;
-- an `incident-query/v1` replay specification containing operation, service,
-  allowlisted filters, window, limits, sampling policy and a query template;
-- collection revision/time, matched/fetched/reduced counts, truncation and
-  provider request ID when available.
+`source-quality/v1` records input, usable, quarantined, duplicate and invalid
+counts; missing fields/timestamps; source errors; time range; and freshness.
+Malformed required fields and unusable timestamps are quarantined before
+normalization. Query and source-schema IDs survive grouping, timeline and
+evidence-graph stages.
 
-Provider-native raw queries are not copied into model context. Prometheus query
-text is removed from metric records after collection; the stable query ID
-remains. Backend credentials, URL paths and query strings are removed.
+## Required production proof
 
-Every collection also exposes `source-quality/v1`: input/usable/quarantined
-records, parse/source errors, duplicates, missing fields/timestamps, timestamp
-quality, first/latest event and freshness relative to the incident window.
-Malformed log/deployment timestamps and missing required fields are
-quarantined before normalization. Query IDs and source schemas survive log
-grouping, timeline construction and evidence-graph nodes.
+Before enabling a connector against a real system, verify:
 
-## Test Mapping
+- least-privilege credentials and tenant isolation;
+- allowlisted query construction;
+- representative real response shapes;
+- pagination, truncation, empty and partial behavior;
+- access denied, throttling, timeout and retry behavior;
+- freshness and clock semantics;
+- provider latency and cost; and
+- redaction of diagnostics, request IDs and stored provenance.
 
-- `A03-T01` and `A03-T02`: future real-backend connector contract suite.
-- `A03-T03`: current log limits plus future pagination suite.
-- `A03-T04` subset: `tests/test_connector_policy.py` verifies per-source
-  timeout/retry/circuit configuration without making a network request.
-- `A03-T05` subset: `tests/test_source_provenance.py` covers sanitized,
-  replayable query provenance, malformed/duplicate records, freshness fields
-  and lineage through grouping/evidence graph.
-- The remaining real-provider access-control, pagination, deploy truth, trace,
-  routing and freshness-SLO evidence stays open.
+No real provider endpoint or source map should be committed to this repository.

@@ -16,5 +16,6 @@ redacted before persistence.
 | Connector query | `connector-provenance/v2` plus sanitized `incident-query/v1` | Stable query ID; explicit source schema; no backend credentials or unrestricted raw provider query. |
 | Source quality | `source-quality/v1` | Counts input, usable, quarantined, duplicate and invalid records; event range and freshness are explicit. |
 
-Knowledge records and external publication records are not implemented in this
-POC. They must not be inferred from mutable workflow state.
+Curated knowledge, exact-draft review and publication-attempt records are
+implemented in MySQL. Provider-specific delivery reconciliation and immutable
+organizational audit storage remain deployment concerns.

@@ -1,116 +1,84 @@
-# Incident Agent - Hypothesis Candidate Contract
+# Hypothesis and grounding contract
 
-**Current deterministic candidate schema:** `deterministic-candidate/v1`  
-**Current observed signal schema:** `observed-signal/v1`  
-**Current impact assessment schema:** `impact-assessment/v1`  
-**Current signal-impact schema:** `signal-impact-link/v2`  
-**Current pre-review model schema:** `model-interpretation/v1`  
-**Current grounding schema:** `claim-grounding/v1`
+The deterministic layer produces ranked hypothesis candidates. It does not
+produce a verified root cause.
 
-The deterministic scoring layer produces **hypothesis candidates**. It does not
-produce a verified root cause. Every candidate carries a rank, trigger, cause
-label, uncalibrated qualitative confidence, supporting and contradicting
-evidence, assumptions, gaps, and the next verification step.
+## Observation before hypothesis
 
-## Observation Before Hypothesis
+A catalog match first becomes `observed-signal/v1`. The record preserves its
+evidence, signal family, entity scope, burst summary and typed impact links.
+Recovery or success stays separate from adverse impact. A failure signal with
+no compatible impact remains visible as observation-only.
 
-A direct catalog match first becomes `observed-signal/v1`, not a cause. The
-record preserves its event ID, signal family/status, minimized workload and
-execution scope, `event-burst/v1` summary, and any `signal-impact-link/v2`
-records plus a typed `impact-assessment/v1`.
+Multiple competing failure categories, materially tied candidates or
+contradictory evidence force abstention rather than an arbitrary winner.
 
-Impact links can show an explicit operation effect, a shared-entity adverse
-lifecycle event, or later recovery/success. Every link remains
-`causal_status: not_established`. A recovered signal without linked adverse
-impact remains visible as observation-only. Multiple observed failure
-categories force abstention even when one would otherwise rank first.
+## Candidate boundary
 
-`impact-assessment/v1` keeps fault, impact, adverse outcome, general outcome,
-recovery and contradicting event IDs in separate roles. Entity compatibility
-is `exact`, `workload_only`, `unknown` or `mismatch`; time relation is
-`before`, `during`, `after` or `unknown`. A success on the same workload may
-contradict incident impact, but an adverse lifecycle event from a conflicting
-execution cannot establish impact for the observed fault.
+Every deterministic candidate is explicitly unverified:
 
-## Causal Guardrail
+```text
+claim_type: hypothesis_candidate
+causal_status: requires_verification
+root_cause_status: not_established
+```
 
-All current deterministic candidates have:
+Detection rules, timing and a preceding same-service deployment can raise a
+candidate's investigation priority. They cannot establish causality by
+themselves.
 
-- `claim_type: hypothesis_candidate`;
-- `causal_status: requires_verification`;
-- `root_cause_status: not_established`;
-- `mechanism: null`; and
-- `impact_link: null`.
+Each candidate includes:
 
-This makes the limit explicit: detection rules, timing, and a preceding
-same-service deploy can increase investigation priority, but cannot establish a
-root cause by themselves. The deploy correlation only includes a matching
-service deployment that occurred in the 15-minute window before the first error.
+- stable ID, rank, title and category;
+- qualitative, uncalibrated confidence;
+- supporting and contradicting evidence;
+- assumptions and evidence gaps;
+- observed signals and typed impact links; and
+- the next safe verification step.
 
-## Current Candidate Fields
+## Model boundary
 
-| Field group | Fields |
-| --- | --- |
-| Identity and ranking | `candidate_schema_version`, `id`, `rank`, `title`, `cause`, `category` |
-| Claim boundary | `claim_type`, `trigger`, `causal_status`, `root_cause_status`, `mechanism`, `impact_link` |
-| Confidence | `score`, `confidence`, `confidence_label`, `confidence_calibration`, `reasons`, `assumptions` |
-| Evidence | `event_ids`, `evidence`, `supporting_evidence`, `weaknesses`, `contradicting_evidence`, `gaps`, `symptoms`, `contributing_factors` |
-| Observation context | `observation_ids`, `impact_links`, `impact_event_ids`, `adverse_outcome_event_ids`, `outcome_event_ids`, `recovery_event_ids`, `successful_completion_event_ids`, `contradicting_event_ids` for signal-derived candidates |
-| Next action | `verification`, `next_verification`, `recovery_actions` |
+Model interpretation must return structured JSON. Every rendered hypothesis
+must match a deterministic candidate rank and cite resolvable evidence IDs.
+Cause, mechanism and impact are separate typed claims.
 
-## Pre-review Model And Grounding Contract
-
-Interpretation now accepts JSON only. Each model hypothesis must match a
-deterministic rank and cite resolvable evidence IDs. Cause, mechanism and impact
-are separate typed claims. The independent grounding pass:
+The independent grounding pass:
 
 - rejects unknown or candidate-incompatible evidence IDs;
-- resolves known IDs into explicit cause, mechanism, impact, contradiction,
-  outcome, recovery and successful-completion roles;
-- prevents general outcomes, recovery or successful completion from proving an
-  adverse-impact claim;
-- allows impact claims to cite only explicit impact or adverse-outcome IDs,
-  while preserving general outcome, recovery, success and contradiction as
-  separate context without strengthening the cause claim;
+- checks evidence roles for cause, mechanism, impact and contradiction;
+- prevents outcome, recovery or success from proving adverse impact;
 - prevents correlation from becoming an observed root cause;
-- requires a validated cross-event semantic link before rendering a mechanism;
-- caps confidence when a source failed or log evidence is truncated;
-- accepts read-only next steps through a positive verb policy, requires unknown
-  or mutating steps to be explicit proposals with approval, and removes claims
-  that an action was already executed without action evidence; and
-- permits zero hypotheses through an explicit abstention.
+- requires a validated cross-event link before rendering a mechanism;
+- caps confidence when a source failed or evidence was truncated;
+- permits only read-only next steps unless a mutation is clearly marked as a
+  proposal requiring approval; and
+- accepts zero hypotheses through explicit abstention.
 
-Review Markdown is a rendering of this validated structure. The model's free
-TL;DR, title and blast-radius wording are not trusted as factual output.
+Free-form titles, summaries and blast-radius wording are not trusted as facts.
+Review Markdown is rendered from the validated structure.
 
-## Remaining Work
+## Abstention
 
-RCA and postmortem still use their existing later-stage contracts and must
-eventually consume the exact approved typed hypothesis/revision. Numeric
-probabilities remain intentionally uncalibrated, and broader cross-source
-contradiction/type-compatibility evaluation remains open.
+The result is `No supported root cause yet` when:
 
-## Test Mapping
+- no candidate has compatible support;
+- required evidence is missing, stale or malformed;
+- leading candidates are materially tied;
+- supporting and contradicting evidence conflict; or
+- provider/model output fails its contract.
 
-- `A05-T02` subset: `tests/test_hypothesis_contract.py` validates candidate
-  schema and scoring boundaries.
-- `A05-T03` subset: `tests/test_hypothesis_contract.py` validates temporal and
-  same-service deploy correlation.
-- `A05-T04` subset: `tests/test_hypothesis_contract.py` validates the valid
-  insufficient-evidence result before model reasoning.
-- `A05-T07` subset: `tests/test_hypothesis_contract.py` validates a factual
-  log-versus-metric contradiction. Final hypotheses, grounding, revision and
-  calibrated probabilities remain open.
-- The degraded-output tests prove that model bypass/provider fallback renders
-  only actual deterministic candidates and gaps, does not force three
-  hypotheses or numeric probabilities, and cannot add causal RCA/postmortem
-  claims.
-- The approved-context test proves that raw incident volume remains visible as
-  an aggregate count while downstream RCA/postmortem detail is bounded.
-- `tests/test_claim_grounding.py` covers typed rendering, hallucinated IDs,
-  role-incompatible known IDs, adverse-impact versus successful-completion
-  separation, causal downgrades, mechanism links, confidence caps, unsafe
-  actions and non-JSON abstention.
-- `tests/test_signal_retention.py` covers observation-only signals, minimized
-  entity links, recovery context, competing-category abstention and collapsed
-  burst summaries.
+An abstention retains the incident window, available evidence, gaps and the
+next smallest safe collection step. It never claims remediation occurred.
+
+## Verification
+
+The contract is covered by:
+
+- `tests/test_hypothesis_contract.py`;
+- `tests/test_claim_grounding.py`;
+- `tests/test_signal_retention.py`;
+- `tests/test_adversarial_boundaries.py`; and
+- the label-last checks in [EVALUATION.md](../EVALUATION.md).
+
+Numeric model confidence remains intentionally uncalibrated and is never proof
+of causality.

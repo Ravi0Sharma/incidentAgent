@@ -1,55 +1,62 @@
-# Incident Agent HTTP API
+# HTTP API
 
-**API version:** `v1`  
-**Machine-readable contract:** `GET /openapi.json` from the running webhook
-service.
+The running service publishes the machine-readable contract at
+`GET /openapi.json` and interactive documentation at `GET /docs`.
 
 ## Authentication
 
-`POST /v1/alerts` uses `X-Incident-Signature`. In production it must include
-`X-Incident-Timestamp` and `X-Incident-Nonce`; the signed value is
-`timestamp + "." + nonce + "." + raw_body`. The nonce is stored as a hash in
-MySQL for the configured replay window. Reviewer routes use HTTP Basic
-authentication when reviewer credentials are configured.
+Alert intake uses `X-Incident-Signature`. Secure environments also require
+`X-Incident-Timestamp` and `X-Incident-Nonce`; see the
+[alert contract](ALERT_INPUT_CONTRACT.md).
 
-## Endpoints
+Local review uses Basic Auth. Shadow/production configuration requires OIDC
+login or validated bearer claims with separate viewer, decision and operator
+roles. State-changing browser requests require an incident-bound CSRF token.
 
-| Endpoint | Meaning | Success | Important errors |
-| --- | --- | --- | --- |
-| `POST /v1/alerts` | Validate, persist and enqueue or coalesce one or more alerts | `200` with per-alert `accepted`, `coalesced`, or `duplicate_event` status | `400` malformed contract, `401` signature/replay, `413` limits, `429` intake limit, `503` queue capacity |
-| `POST /alerts` | Temporary compatibility alias for `/v1/alerts` | Same as v1 | Same as v1 |
-| `POST /alerts/{incident_id}/review` | Submit an approve/reject decision for a saved review revision | `200` | `409` stale/missing review revision |
-| `GET /alerts/{incident_id}/review/status` | Read review state | `200` | returns `awaiting_review: false` if absent |
-| `POST /v1/dead-letters/{job_id}/replay` | Queue a safe reprocessing run from redacted stored evidence | `200 accepted` | `404` unknown job |
-| `POST /v1/incidents/{incident_id}/reprocess` | Queue latest stored evidence with selected code/prompt/model versions | `200 accepted` | `404` unknown incident |
-| `GET /healthz` / `GET /readyz` | Liveness / configuration + MySQL queue readiness | `200` | `503` invalid configuration or unavailable store |
-| `GET /metrics` | Process-local Prometheus-format diagnostic metrics | `200` | — |
+## Main endpoints
 
-## Intake semantics
+| Method and path | Purpose |
+| --- | --- |
+| `POST /v1/alerts` | Validate, persist and enqueue/coalesce alerts |
+| `POST /alerts` | Compatibility alias for `/v1/alerts` |
+| `GET /` | Pending-review dashboard |
+| `GET /incidents/{thread_id}` | Current incident review page |
+| `POST /alerts/{thread_id}/review` | Approve, reject or request more evidence for the current analysis revision |
+| `GET /alerts/{thread_id}/review/status` | Read pending analysis-review state |
+| `POST /alerts/{thread_id}/publish` | Decide publication for the exact draft version |
+| `POST /v1/incidents/{thread_id}/reprocess` | Queue a new analysis from stored evidence |
+| `POST /v1/dead-letters/{job_id}/replay` | Replay a failed analysis job |
+| `GET /v1/canary/jobs/{job_id}` | Read authenticated synthetic-canary status |
+| `GET /healthz` | Process liveness only |
+| `GET /readyz` | Configuration, database, migration, queue and worker readiness |
+| `GET /metrics` | Prometheus-format process metrics |
 
-An `accepted` response means the normalized event, idempotency key, and new
-MySQL job committed in one transaction. `coalesced` means the distinct event
-committed and the existing pending job atomically advanced to the newest event.
-Exact retries return `duplicate_event` and do not change the job. Matching
-events share a fixed incident time bucket, a bounded sliding debounce, and at
-most one pending job. An event received while analysis is leased creates one
-pending follow-up rather than changing the in-flight job.
+## Intake responses
 
-The worker creates the analysis revision after leasing the job; a request never
-waits for LLM analysis. Thus event volume remains durable without implying one
-model call per event.
+`POST /v1/alerts` returns a per-alert status:
 
-Every event retains `event_time`, `source_time`, `received_at`,
-`clock_quality`, and its monotonic database event ID. Timeline reads sort by
-event time then ID, preserving arrival order as an audit field.
+- `accepted`: event and new job committed together;
+- `coalesced`: distinct event committed and the pending job advanced; or
+- `duplicate_event`: exact retry already exists and no job changed.
 
-## Concurrency and failures
+Common failures are `400` for the payload contract, `401` for
+signature/replay, `403` for source policy, `413` for limits, `429` for intake
+rate limits and `503` for queue capacity or unavailable required state.
 
-Jobs are leased with MySQL row locks. Lifecycle and pending-review writes use
-monotonic versions; a client must send `pending_revision` when posting a
-review, otherwise the request receives `409 stale_incident_revision`. Failed
-jobs retry, then move to `incident_dead_letters` with redacted diagnostics.
-Dead-letter replay and incident reprocessing create analysis-only jobs and do
-not publish an external side effect. Their payload can specify
-`code_version`, `prompt_version`, and `model_version`; these values are stored
-with the resulting incident revision for reproducibility.
+The worker creates the analysis revision asynchronously after leasing the job.
+An intake request does not wait for connectors or a model call.
+
+## Concurrency
+
+Jobs use MySQL leases. Lifecycle, pending-review and exact-draft decisions use
+monotonic versions. A stale decision receives `409` instead of applying to a
+newer analysis or draft.
+
+Dead-letter replay and incident reprocessing create analysis work only. They
+do not repeat an external publication attempt.
+
+## Health versus readiness
+
+`/healthz` means the API process is alive. It is not permission to route
+traffic. `/readyz` verifies the supported runtime configuration, current
+migration, MySQL/queue availability and required worker heartbeats.

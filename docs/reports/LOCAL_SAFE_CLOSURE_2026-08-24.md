@@ -6,10 +6,9 @@ Release scope: local synthetic pipeline and explicit OpenAI smoke
 
 Production claim: none
 
-This is a follow-up to
-[`LOCAL_SAFE_CLOSURE_2026-08-09.md`](LOCAL_SAFE_CLOSURE_2026-08-09.md). The
-older record remains the historical closure decision; this record adds the
-current regression, admission-control and model-provider evidence.
+This record preserves the regression, admission-control and model-provider
+evidence for the local-safe boundary. The current consolidated interpretation
+is in [`EVALUATION.md`](../EVALUATION.md).
 
 ## Decision
 

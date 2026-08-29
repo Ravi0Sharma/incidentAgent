@@ -1,54 +1,55 @@
 # Incident Agent documentation
 
-The root [`README.md`](../README.md) is the system overview and onboarding
-entry point. This index separates current architecture and operating contracts
-from planning history and dated evidence.
+The root [README](../README.md) is the main entry point. These documents cover
+only current behavior, public evaluation evidence and operating boundaries.
 
-## Architecture
+## Start here
 
-- [`ARCHITECTURE.md`](architecture/ARCHITECTURE.md) — runtime topology and trust boundaries.
-- [`SYSTEM_FLOW.svg`](architecture/SYSTEM_FLOW.svg) — complete visual workflow.
-- [`CANONICAL_SCHEMAS.md`](architecture/CANONICAL_SCHEMAS.md) — durable records and invariants.
-- [`DATA_INVENTORY.md`](architecture/DATA_INVENTORY.md) — stored data and retention status.
-- [`KNOWLEDGE_MEMORY.md`](architecture/KNOWLEDGE_MEMORY.md) — curated knowledge boundary.
-- [`TARGET_ENVIRONMENT_AND_DATA_PRIORITY.md`](architecture/TARGET_ENVIRONMENT_AND_DATA_PRIORITY.md) — target environment and evaluation-data priorities.
-- [`adr/`](adr/) — architecture decision records.
+| Need | Document |
+| --- | --- |
+| Understand the runtime | [Architecture](architecture/ARCHITECTURE.md) and [system flow](architecture/SYSTEM_FLOW.svg) |
+| Understand the results | [Evaluation](EVALUATION.md) |
+| Run the complete local stack | [Docker Compose runbook](operations/LOCAL_DOCKER_COMPOSE.md) |
+| Connect CloudWatch safely | [CloudWatch integration](operations/CLOUDWATCH.md) |
+| Check production blockers | [Production readiness](operations/PRODUCTION_READINESS.md) |
 
 ## Contracts
 
-- [`OPERATING_CONTRACT.md`](contracts/OPERATING_CONTRACT.md) — supported and unsupported behavior.
-- [`ALERT_INPUT_CONTRACT.md`](contracts/ALERT_INPUT_CONTRACT.md) — accepted alert formats and validation.
-- [`OPENAPI_CONTRACT.md`](contracts/OPENAPI_CONTRACT.md) — HTTP, authentication and error contract.
-- [`CONNECTOR_CONTRACT.md`](contracts/CONNECTOR_CONTRACT.md) — telemetry/change connector behavior.
-- [`EVIDENCE_CONTRACT.md`](contracts/EVIDENCE_CONTRACT.md) — normalized evidence and provenance.
-- [`HYPOTHESIS_CONTRACT.md`](contracts/HYPOTHESIS_CONTRACT.md) — candidate and confidence semantics.
-- [`MEMORY_AND_REVIEW_CONTRACT.md`](contracts/MEMORY_AND_REVIEW_CONTRACT.md) — persistence and human-review invariants.
+- [Alert input](contracts/ALERT_INPUT_CONTRACT.md)
+- [HTTP API](contracts/OPENAPI_CONTRACT.md)
+- [Connectors and provenance](contracts/CONNECTOR_CONTRACT.md)
+- [Evidence](contracts/EVIDENCE_CONTRACT.md)
+- [Hypotheses and grounding](contracts/HYPOTHESIS_CONTRACT.md)
+- [Memory and review](contracts/MEMORY_AND_REVIEW_CONTRACT.md)
 
 ## Operations
 
-- [`LOCAL_DOCKER_COMPOSE.md`](operations/LOCAL_DOCKER_COMPOSE.md) — zero-setup local stack and E2E checklist.
-- [`GITLAB_CI.md`](operations/GITLAB_CI.md) — GitLab pipeline and runner prerequisites.
-- [`SETUP_GUIDE.md`](operations/SETUP_GUIDE.md) — native Python and environment setup.
-- [`OPERATOR_RUNBOOKS.md`](operations/OPERATOR_RUNBOOKS.md) — migrations, recovery, queue and publication incidents.
-- [`PRODUCTION_READINESS.md`](operations/PRODUCTION_READINESS.md) — authoritative production Definition of Done.
-- [`SECURITY_AND_OPERATIONS.md`](operations/SECURITY_AND_OPERATIONS.md) — controls and operational baseline.
-- [`WEBHOOK_INGRESS.md`](operations/WEBHOOK_INGRESS.md) — signed-alert ingress, source-address and rate-limit policy.
-- [`RELEASE_EVIDENCE.md`](operations/RELEASE_EVIDENCE.md) — release evidence template.
-- [`REVIEWER_GUIDE.md`](operations/REVIEWER_GUIDE.md) — safe human decision guidance.
+- [Local Docker Compose](operations/LOCAL_DOCKER_COMPOSE.md)
+- [Native setup](operations/SETUP_GUIDE.md)
+- [Operator runbooks](operations/OPERATOR_RUNBOOKS.md)
+- [Security and operations](operations/SECURITY_AND_OPERATIONS.md)
+- [GitLab CI](operations/GITLAB_CI.md)
+- [Production readiness](operations/PRODUCTION_READINESS.md)
 
-## Development and governance
+## Engineering detail
 
-- [`PROJECT.md`](development/PROJECT.md) — project compass and decision links.
-- [`PROJECT_MASTER_CHECKLIST.md`](development/PROJECT_MASTER_CHECKLIST.md) — implementation checklist.
-- [`TEST_STRATEGY.md`](development/TEST_STRATEGY.md) — verification strategy.
-- [`GOVERNANCE_AND_QUALITY.md`](development/GOVERNANCE_AND_QUALITY.md) — quality gates and release policy.
-- [`SAFE_COMPLETION_PLAN.md`](development/SAFE_COMPLETION_PLAN.md) — bounded local completion plan.
-- [`DEFERRED_WORK_CHECKLIST.md`](development/DEFERRED_WORK_CHECKLIST.md) — explicitly deferred work.
-- [`DEFERRED_CONNECTION_FAILURE_TESTS.md`](development/DEFERRED_CONNECTION_FAILURE_TESTS.md) — parked provider-failure scenarios.
-- [`IMPLEMENTATION_PLAN_FROM_LINK_FINDINGS.md`](development/IMPLEMENTATION_PLAN_FROM_LINK_FINDINGS.md) and [`LINK_FINDINGS.md`](development/LINK_FINDINGS.md) — research-derived planning.
+- [Project compass](development/PROJECT.md)
+- [Production checklist execution order](development/PROJECT_MASTER_CHECKLIST.md)
+- [Test strategy](development/TEST_STRATEGY.md)
+- [Research findings](development/LINK_FINDINGS.md)
+- [Research-derived implementation plan](development/IMPLEMENTATION_PLAN_FROM_LINK_FINDINGS.md)
+- [Deferred work](development/DEFERRED_WORK_CHECKLIST.md)
+- [MySQL store and queue ADR](adr/0001-mysql-incident-store-and-queue.md)
+- [Canonical schemas](architecture/CANONICAL_SCHEMAS.md)
+- [Data inventory](architecture/DATA_INVENTORY.md)
+- [Curated knowledge memory](architecture/KNOWLEDGE_MEMORY.md)
 
-## Dated reports
+## Detailed evidence
 
-The [`reports/`](reports/) directory contains evaluation results, local closure
-records and shadow-readiness audits. These are historical evidence. They do
-not override current code, contracts or the production-readiness checklist.
+- [Pre-review evaluation](reports/PRE_REVIEW_EVALUATION.md)
+- [Bounded live-model evaluation](reports/OPENAI_LIVE_EVALUATION_2026-08-09.md)
+- [Latest local-safe evidence](reports/LOCAL_SAFE_CLOSURE_2026-08-24.md)
+
+Raw public evaluation datasets and generated reports are intentionally not
+committed. Dataset provenance and fetch instructions are in
+[data/external/README.md](../data/external/README.md).
