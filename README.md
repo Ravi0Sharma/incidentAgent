@@ -91,17 +91,222 @@ directory. Public datasets and generated derivatives are also ignored.
 
 ![Incident Agent system flow](docs/architecture/SYSTEM_FLOW.svg)
 
-The review page contains:
-
-- the important evidence and timeline around the alert;
-- ranked explanations with supporting and contradicting evidence;
-- confidence, known gaps and an explicit abstention when required;
-- the analysis revision and human review controls; and
-- a versioned local postmortem draft after analysis approval.
-
 The model receives only bounded, redacted evidence. It can interpret evidence
 or abstain, but it cannot create evidence, approve a result, publish or take an
 operational action.
+
+### What the review UI shows
+
+The UI is an operator view of one durable analysis revision, not a chatbot and
+not a stream of hidden model reasoning. It is designed to answer three
+questions quickly: what happened, what supports the current explanation and
+what decision is safe now.
+
+| Area | What the reviewer can inspect |
+| --- | --- |
+| Incident header | Status, incident ID, severity and its reason, primary service, owner and tier |
+| Decision brief | Current anchor event, strongest log group, relevant deployment, metrics and known gaps |
+| Timeline | A bounded chronological view around the alert, including the anchor event |
+| Ranked hypotheses | Candidate explanations ordered by score, with confidence, role and status |
+| Evidence for each candidate | Supporting and contradicting evidence IDs instead of an unsupported summary |
+| Evidence coverage | Which claims are grounded, which sources contributed and which evidence is still missing |
+| Data quality | Source success, partial results, unavailable sources and the resulting uncertainty |
+| Semantic correlation | The bounded model-assisted interpretation and its tool trace when that stage ran |
+| Verification | Concrete read-only checks that could confirm or reject the leading explanation |
+| Revision history | Added, corrected and removed evidence compared with the previous revision |
+| Technical detail | The exact evidence pack and bounded execution information needed for audit or debugging |
+| Review controls | Approve one displayed hypothesis, reject the revision or request specific additional evidence |
+
+The incident list is the starting point. It links to the latest analysis and
+shows enough lifecycle state to distinguish work waiting for review from work
+that is still processing, rejected or complete.
+
+The detailed page intentionally keeps contradictory evidence beside supporting
+evidence. A high score is not allowed to hide disagreement between logs,
+metrics and deployments. Missing or failed sources remain visible rather than
+being silently treated as a healthy signal.
+
+#### Review decisions
+
+| Decision or state | Result |
+| --- | --- |
+| Approve | Selects one candidate from the pending revision and continues to deeper RCA; it does not prove causality |
+| Reject | Records the reviewer feedback and stops that approval path |
+| Request more evidence | Requires concrete feedback and sends the investigation through another bounded evidence pass |
+| Abstained analysis | Approval is disabled because there is no supported candidate to select |
+| Stale browser revision | The API returns `409 stale_incident_revision`; the reviewer must inspect the newer revision |
+
+Every decision targets the exact `pending_revision`. The database row is
+locked while the decision is committed, so two browser sessions cannot approve
+different candidates for the same revision. Reviewer identity, request ID,
+displayed evidence and rationale are retained in the audit record.
+
+Corrections never overwrite the old analysis. They create a new revision with
+its predecessor, evidence membership, candidate snapshot, data-quality state
+and code/prompt/model context. This makes the visible result reproducible and
+lets the UI show what actually changed.
+
+### Postmortem draft and publication gates
+
+Analysis approval continues to a deeper, bounded RCA pass and creates a
+versioned local postmortem draft. The draft uses exactly these sections:
+
+1. Executive Summary
+2. Impact
+3. Root Cause
+4. Timeline
+5. Resolution
+6. What went well
+7. What went poorly
+8. Where we got lucky
+9. Lessons learned
+10. Follow-up Actions
+
+The writer is constrained to the reviewed context and supplied timestamps. It
+must use blameless language, stay below 600 words and say `unknown` or `not
+established` when the evidence does not support a claim. Selecting a hypothesis
+does not permit the draft to invent impact, recovery steps, process failures,
+missing controls or remediation work.
+
+Follow-up actions must come from an explicit evidence gap and use
+`[owner-team] action`. Provider failure falls back to a deterministic draft;
+it never removes the review boundary.
+
+There are two separate human gates:
+
+1. **Analysis review** selects a candidate for deeper investigation.
+2. **Publication review** approves one exact draft version and its SHA-256
+   digest for one configured publisher.
+
+Editing the draft changes the digest and invalidates the earlier publication
+approval. With `PUBLISH_EXTERNAL=false`, approval still produces only the
+local HTML draft. If a configured publisher returns an ambiguous
+acknowledgement, the durable attempt is held for operator reconciliation rather
+than retried automatically.
+
+### Inspect the graph with Phoenix
+
+[Arize Phoenix](https://github.com/Arize-ai/phoenix) is an optional local
+observability UI for understanding how one incident moved through LangGraph.
+It is a debugging aid, not an evidence source, audit database or approval
+system.
+
+Install the optional packages in a native development environment:
+
+```bash
+.venv/bin/pip install -r requirements-observability.txt
+```
+
+If the API, database and native environment are already configured, the helper
+starts Phoenix and the web UI together:
+
+```bash
+.venv/bin/python scripts/start_incident_agent.py --no-llm
+```
+
+Remove `--no-llm` only when the ignored `.env` contains an approved model
+configuration. The helper opens:
+
+- incident review UI: <http://127.0.0.1:8000/>
+- Phoenix traces: <http://127.0.0.1:6006/>
+
+Phoenix can also run separately:
+
+```bash
+.venv/bin/python scripts/start_phoenix.py
+PHOENIX_ENABLED=true .venv/bin/uvicorn webhook.api:app --host 127.0.0.1 --port 8000
+```
+
+The local helper stores Phoenix data under ignored `.phoenix_data/`. A custom
+OTLP collector can be selected through deployment configuration, but that is a
+separate security and egress decision.
+
+#### What to inspect in Phoenix
+
+| Trace view | Useful question |
+| --- | --- |
+| Graph span order | Which branches and review loops ran for this incident? |
+| Duration by node | Was time spent collecting evidence, interpreting it or waiting on a provider? |
+| Error status | Which node failed, and did the graph degrade safely or stop? |
+| Parallel collection | Did logs, metrics and deployments finish before aggregation? |
+| Nested OpenAI spans | Which bounded model stage called the provider, and how long did it take? |
+| Reinvestigation loop | Did reviewer feedback cause a new evidence pass and revision? |
+| Publication path | Did execution stop at the expected review gate before the publisher? |
+
+`PHOENIX_COMPACT_TRACES=true` is the default. It hides graph-state content,
+prompts and model output while retaining the trace structure needed for timing
+and failure analysis. Set it to `false` only for approved, synthetic local
+debugging:
+
+```bash
+PHOENIX_ENABLED=true PHOENIX_COMPACT_TRACES=false \
+  .venv/bin/uvicorn webhook.api:app --host 127.0.0.1 --port 8000
+```
+
+Expanded traces can contain the same sensitive material as an incident input.
+Do not enable them for production telemetry, shared collectors or unreviewed
+data. Phoenix retention is not a substitute for the redacted MySQL audit
+record.
+
+The runtime also appends a small `execution_log` with node name and duration.
+That is useful in tests and local reports; Phoenix adds the interactive parent,
+child, timing and error view.
+
+### Why every node has a control boundary
+
+One large model call would make failures, source gaps and unsafe transitions
+difficult to isolate. The graph separates deterministic work, provider calls
+and human authority so each transition can be bounded, tested and audited.
+
+| Stage | Main control | Failure it prevents or exposes |
+| --- | --- | --- |
+| Ingest and classify | Authentication, replay checks, schema limits, normalization and redaction | Untrusted or oversized input entering analysis |
+| Durable admission | Event and queue job in one transaction, content idempotency | Accepted alerts disappearing or duplicate deliveries multiplying work |
+| Collection plan | Deployment-owned source allowlists and incident budgets | Alert text selecting arbitrary infrastructure or unlimited queries |
+| Logs, metrics, deploys | Parallel bounded reads with source-specific provenance | One slow source hiding which data is partial or unavailable |
+| Normalize and aggregate | Deterministic parsing, stable grouping and size limits | Model-dependent evidence identities and unbounded raw context |
+| Detection and features | Versioned rules over canonical evidence | Hidden dataset labels or unsupported facts entering candidates |
+| Correlation | Explicit supporting and contradicting evidence links | A temporal coincidence being presented as causality |
+| Severity reassessment | Evidence-backed reason retained with the revision | Silent severity changes after collection |
+| Scope expansion | Allowlisted read-only tools, iteration and deadline budgets | Recursive investigation, uncontrolled cost or arbitrary tool use |
+| Candidate scoring | Deterministic ranking before interpretation | A provider response becoming the only explanation source |
+| Context and evidence pack | Token, item and byte limits plus untrusted-data wrapping | Prompt injection and unlimited context growth |
+| Semantic interpretation | Structured output validation, citation checks and abstention | Fabricated evidence IDs or forced answers when support is weak |
+| Human review | Exact revision binding and reviewer identity | A stale or unseen result continuing to RCA |
+| Deep RCA and draft | Approved context only, claim checks and versioned drafts | Approval being mistaken for proof or a draft inventing facts |
+| Publication review | Exact draft digest and explicit publisher selection | An edited or different report being published under old approval |
+| Publisher | Off by default, durable attempt guard, no ambiguous retry | Duplicate external work items after uncertain acknowledgement |
+
+This separation also makes regressions diagnosable. If grouping changed, its
+tests can fail without blaming the model. If a provider timed out, the trace
+shows that independently from evidence quality. If the result changed after
+new evidence, the revision diff shows why.
+
+### Portable incident-response skills
+
+The restored [`skills/`](skills/) directory contains portable `SKILL.md`
+playbooks. They are useful for human reference or for an external agent runtime
+that supports YAML-frontmatter skills.
+
+| Skill | Use |
+| --- | --- |
+| `severity-classification` | Apply and adapt a SEV-1 through SEV-5 classification rubric |
+| `alerting-principles` | Design actionable alerts with useful context and urgency |
+| `incident-runbook` | Coordinate roles and decisions during an active incident |
+| `postmortem-writer` | Structure a concise, blameless postmortem |
+| `security-incident` | Work through a security-specific response checklist |
+| `anti-patterns` | Recognize common incident-management failure modes |
+| `agent-incident-responder` | Apply human-in-the-loop, transparency and graceful-degradation principles |
+| `caveman` | Produce terse operator communication at `lite`, `full` or `ultra` level |
+
+These files do **not** load themselves into this LangGraph application and do
+not change its permissions, prompts or routing. Runtime safety behavior remains
+implemented and tested in the graph, contracts, prompts and
+`utils/skill_cards.py`. Treat a portable skill as guidance until its rules are
+implemented as executable controls.
+
+See [the skills index](skills/README.md) for supported folder formats, source
+attribution and loading notes for other runtimes.
 
 ### CloudWatch path
 
@@ -285,6 +490,7 @@ Complete the [production-readiness checklist](docs/operations/PRODUCTION_READINE
 | `fixtures/`, `evaluation/` | Evaluation data loaders, held-out labels and scoring |
 | `tests/`, `scripts/` | Tests, migrations, verification and operational tools |
 | `config/` | Service catalogue, source schemas, dashboards and environment examples |
+| `skills/` | Portable incident-response and communication playbooks; not runtime-loaded |
 | `docs/` | Current architecture, contracts, operations and evaluation |
 
 ## Documentation
@@ -296,6 +502,7 @@ Complete the [production-readiness checklist](docs/operations/PRODUCTION_READINE
 | Evaluation method and results | [Evaluation](docs/EVALUATION.md) |
 | CloudWatch boundary and setup | [CloudWatch integration](docs/operations/CLOUDWATCH.md) |
 | Jira output setup | [Jira MCP output](docs/operations/JIRA_MCP.md) |
+| Portable response playbooks | [Skills index](skills/README.md) |
 | API behavior | [OpenAPI contract](docs/contracts/OPENAPI_CONTRACT.md) |
 | Evidence and hypothesis rules | [Evidence contract](docs/contracts/EVIDENCE_CONTRACT.md) and [hypothesis contract](docs/contracts/HYPOTHESIS_CONTRACT.md) |
 | Local operation and recovery | [Docker Compose runbook](docs/operations/LOCAL_DOCKER_COMPOSE.md) and [operator runbooks](docs/operations/OPERATOR_RUNBOOKS.md) |
