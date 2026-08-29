@@ -9,5 +9,5 @@ coverage==7.10.6
 cyclonedx-bom==7.3.1
 mypy==1.17.1
 pip-audit==2.10.1
-pip-tools==7.6.0
+pip-tools==7.6.1
 ruff==0.12.12

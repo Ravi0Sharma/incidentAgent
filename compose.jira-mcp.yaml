@@ -1,0 +1,29 @@
+x-jira-mcp-environment: &jira-mcp-environment
+  PUBLISH_EXTERNAL: "true"
+  PUBLISH_SLACK: "false"
+  PUBLISH_GITHUB: "false"
+  PUBLISH_JIRA_MCP: "true"
+  JIRA_MCP_URL: "${JIRA_MCP_URL:-https://mcp.atlassian.com/v1/mcp}"
+  JIRA_MCP_EMAIL: "${JIRA_MCP_EMAIL:?set JIRA_MCP_EMAIL in the ignored .env file}"
+  JIRA_MCP_API_TOKEN: "${JIRA_MCP_API_TOKEN:?set JIRA_MCP_API_TOKEN in the ignored .env file}"
+  JIRA_MCP_CLOUD_ID: "${JIRA_MCP_CLOUD_ID:?set JIRA_MCP_CLOUD_ID in the ignored .env file}"
+  JIRA_MCP_PROJECT_KEY: "${JIRA_MCP_PROJECT_KEY:?set JIRA_MCP_PROJECT_KEY in the ignored .env file}"
+  JIRA_MCP_ISSUE_TYPE: "${JIRA_MCP_ISSUE_TYPE:-Task}"
+  JIRA_MCP_TIMEOUT_SECONDS: "${JIRA_MCP_TIMEOUT_SECONDS:-30}"
+
+services:
+  api:
+    environment:
+      <<: *jira-mcp-environment
+  worker-1:
+    environment:
+      <<: *jira-mcp-environment
+  worker-2:
+    environment:
+      <<: *jira-mcp-environment
+
+# The base stack is intentionally isolated. Only this explicit override opens
+# outbound networking so the already-approved draft can reach Atlassian MCP.
+networks:
+  incident_backend:
+    internal: false

@@ -343,6 +343,32 @@ class OperationalBaselineTests(unittest.TestCase):
         )
         self.assertEqual(validate_runtime_config(config), [])
 
+    def test_production_can_publish_only_to_jira_mcp(self):
+        jira_only = {
+            "PUBLISH_EXTERNAL": True,
+            "PUBLISH_SLACK": False,
+            "PUBLISH_GITHUB": False,
+            "PUBLISH_JIRA_MCP": True,
+            "JIRA_MCP_URL": "https://mcp.atlassian.com/v1/mcp",
+            "JIRA_MCP_EMAIL": "service-account@example.test",
+            "JIRA_MCP_CLOUD_ID": "https://example.atlassian.net",
+            "JIRA_MCP_PROJECT_KEY": "OPS",
+            "JIRA_MCP_ISSUE_TYPE": "Task",
+            "JIRA_MCP_TIMEOUT_SECONDS": 30,
+            "EGRESS_ALLOWED_HOSTS": {
+                *_production_config().EGRESS_ALLOWED_HOSTS,
+                "mcp.atlassian.com",
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "JIRA_MCP_API_TOKEN"):
+            validate_runtime_config(_production_config(**jira_only))
+
+        jira_only["JIRA_MCP_API_TOKEN"] = "scoped-test-token"
+        self.assertEqual(
+            validate_runtime_config(_production_config(**jira_only)),
+            [],
+        )
+
     def test_unknown_runtime_mode_fails_closed(
         self,
     ):

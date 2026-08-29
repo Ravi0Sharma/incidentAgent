@@ -249,6 +249,20 @@ GITHUB_REPO = os.getenv(
 )
 
 
+JIRA_MCP_URL = os.getenv(
+    "JIRA_MCP_URL",
+    "https://mcp.atlassian.com/v1/mcp",
+)
+JIRA_MCP_EMAIL = os.getenv("JIRA_MCP_EMAIL")
+JIRA_MCP_API_TOKEN = os.getenv("JIRA_MCP_API_TOKEN")
+JIRA_MCP_CLOUD_ID = os.getenv("JIRA_MCP_CLOUD_ID")
+JIRA_MCP_PROJECT_KEY = os.getenv("JIRA_MCP_PROJECT_KEY")
+JIRA_MCP_ISSUE_TYPE = os.getenv("JIRA_MCP_ISSUE_TYPE", "Task")
+JIRA_MCP_TIMEOUT_SECONDS = float(
+    os.getenv("JIRA_MCP_TIMEOUT_SECONDS", "30")
+)
+
+
 SLACK_WEBHOOK_URL = os.getenv(
     "SLACK_WEBHOOK_URL"
 )
@@ -663,6 +677,11 @@ PUBLISH_EXTERNAL = (
         "PUBLISH_EXTERNAL",
         "false"
     ).lower() == "true"
+)
+PUBLISH_SLACK = os.getenv("PUBLISH_SLACK", "true").lower() == "true"
+PUBLISH_GITHUB = os.getenv("PUBLISH_GITHUB", "true").lower() == "true"
+PUBLISH_JIRA_MCP = (
+    os.getenv("PUBLISH_JIRA_MCP", "false").lower() == "true"
 )
 
 if ENVIRONMENT == "production":

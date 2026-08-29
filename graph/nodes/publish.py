@@ -8,6 +8,8 @@ from clients.github_client import (
     github
 )
 
+from clients.jira_mcp_client import jira
+
 from utils.html_report import (
     render as render_html
 )
@@ -15,6 +17,9 @@ from utils.html_report import (
 from settings import (
     HTML_OUTPUT_DIR,
     PUBLISH_EXTERNAL,
+    PUBLISH_GITHUB,
+    PUBLISH_JIRA_MCP,
+    PUBLISH_SLACK,
 )
 from utils.redaction import redact_data, redact_message
 from utils.render_safety import safe_report_path
@@ -96,22 +101,36 @@ def publish(state):
 
     issue_url = None
     if PUBLISH_EXTERNAL:
+        if not any((PUBLISH_SLACK, PUBLISH_GITHUB, PUBLISH_JIRA_MCP)):
+            raise ValueError(
+                "external publishing is enabled without a destination"
+            )
         publication = begin_publication(incident_id, draft)
         if publication["status"] == "completed":
             issue_url = publication.get("issue_url") or None
         else:
             try:
-                slack.publish(
-                    draft
-                    + "\n\n"
-                    + "_HTML report: "
-                    + f"{html_path}_",
-                    title=title
-                )
-                issue_url = github.create_postmortem(
-                    title,
-                    draft
-                )
+                github_url = None
+                jira_url = None
+                if PUBLISH_SLACK:
+                    slack.publish(
+                        draft
+                        + "\n\n"
+                        + "_HTML report: "
+                        + f"{html_path}_",
+                        title=title
+                    )
+                if PUBLISH_GITHUB:
+                    github_url = github.create_postmortem(
+                        title,
+                        draft
+                    )
+                if PUBLISH_JIRA_MCP:
+                    jira_url = jira.create_postmortem(
+                        title,
+                        draft,
+                    )
+                issue_url = jira_url or github_url
                 complete_publication(
                     publication["publication_key"],
                     publication["attempt_token"],

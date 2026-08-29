@@ -401,20 +401,58 @@ def validate_runtime_config(config):
     if config.PUBLISH_EXTERNAL:
         if mode == "shadow":
             errors.append("external publishing must remain disabled in shadow")
-        slack_url = str(getattr(config, "SLACK_WEBHOOK_URL", ""))
-        if urlparse(slack_url).scheme != "https":
-            errors.append("SLACK_WEBHOOK_URL must use https for external publishing")
-        if not str(getattr(config, "SLACK_CHANNEL", "")).strip():
-            errors.append("SLACK_CHANNEL is required for external publishing")
-        if not str(getattr(config, "GITHUB_TOKEN", "")).strip():
-            errors.append("GITHUB_TOKEN is required for external publishing")
-        if not str(getattr(config, "GITHUB_REPO", "")).strip():
-            errors.append("GITHUB_REPO is required for external publishing")
-        slack_host = urlparse(slack_url).hostname
-        if slack_host and not _egress_host_allowed(slack_host, egress_hosts):
-            errors.append(
-                "SLACK_WEBHOOK_URL host is not present in EGRESS_ALLOWED_HOSTS"
+        publish_slack = bool(getattr(config, "PUBLISH_SLACK", True))
+        publish_github = bool(getattr(config, "PUBLISH_GITHUB", True))
+        publish_jira = bool(getattr(config, "PUBLISH_JIRA_MCP", False))
+        if not any((publish_slack, publish_github, publish_jira)):
+            errors.append("at least one external publishing destination is required")
+        if publish_slack:
+            slack_url = str(getattr(config, "SLACK_WEBHOOK_URL", ""))
+            if urlparse(slack_url).scheme != "https":
+                errors.append(
+                    "SLACK_WEBHOOK_URL must use https for external publishing"
+                )
+            if not str(getattr(config, "SLACK_CHANNEL", "")).strip():
+                errors.append("SLACK_CHANNEL is required for external publishing")
+            slack_host = urlparse(slack_url).hostname
+            if slack_host and not _egress_host_allowed(slack_host, egress_hosts):
+                errors.append(
+                    "SLACK_WEBHOOK_URL host is not present in EGRESS_ALLOWED_HOSTS"
+                )
+        if publish_github:
+            if not str(getattr(config, "GITHUB_TOKEN", "")).strip():
+                errors.append("GITHUB_TOKEN is required for external publishing")
+            if not str(getattr(config, "GITHUB_REPO", "")).strip():
+                errors.append("GITHUB_REPO is required for external publishing")
+            if not _egress_host_allowed("api.github.com", egress_hosts):
+                errors.append(
+                    "api.github.com is not present in EGRESS_ALLOWED_HOSTS"
+                )
+        if publish_jira:
+            jira_url = str(getattr(config, "JIRA_MCP_URL", ""))
+            jira_cloud_id = str(getattr(config, "JIRA_MCP_CLOUD_ID", ""))
+            if urlparse(jira_url).scheme != "https":
+                errors.append("JIRA_MCP_URL must use https for external publishing")
+            if urlparse(jira_cloud_id).scheme != "https":
+                errors.append("JIRA_MCP_CLOUD_ID must use https")
+            for name in (
+                "JIRA_MCP_EMAIL",
+                "JIRA_MCP_API_TOKEN",
+                "JIRA_MCP_PROJECT_KEY",
+                "JIRA_MCP_ISSUE_TYPE",
+            ):
+                if not str(getattr(config, name, "")).strip():
+                    errors.append(f"{name} is required for Jira MCP publishing")
+            jira_timeout = float(
+                getattr(config, "JIRA_MCP_TIMEOUT_SECONDS", 0)
             )
+            if jira_timeout <= 0 or jira_timeout > 120:
+                errors.append("JIRA_MCP_TIMEOUT_SECONDS must be 1..120")
+            jira_host = urlparse(jira_url).hostname
+            if jira_host and not _egress_host_allowed(jira_host, egress_hosts):
+                errors.append(
+                    "JIRA_MCP_URL host is not present in EGRESS_ALLOWED_HOSTS"
+                )
     if errors:
         raise ValueError(
             f"Unsafe {mode} configuration: "

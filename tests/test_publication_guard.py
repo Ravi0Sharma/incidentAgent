@@ -155,6 +155,41 @@ class PublicationNodeTests(unittest.TestCase):
         github.assert_not_called()
         self.assertEqual(result["postmortem_url"], "https://example.invalid/1")
 
+    def test_jira_can_be_the_only_external_destination(self):
+        claim = {
+            "publication_key": "key",
+            "attempt_token": "token",
+            "status": "started",
+            "deduplicated": False,
+        }
+        jira_url = "https://example.atlassian.net/browse/OPS-42"
+        with (
+            patch.object(publish_node, "PUBLISH_EXTERNAL", True),
+            patch.object(publish_node, "PUBLISH_SLACK", False),
+            patch.object(publish_node, "PUBLISH_GITHUB", False),
+            patch.object(publish_node, "PUBLISH_JIRA_MCP", True),
+            patch.object(publish_node, "_write_html", return_value="report.html"),
+            patch.object(publish_node, "begin_publication", return_value=claim),
+            patch.object(publish_node.slack, "publish") as slack,
+            patch.object(publish_node.github, "create_postmortem") as github,
+            patch.object(
+                publish_node.jira,
+                "create_postmortem",
+                return_value=jira_url,
+            ) as jira,
+            patch.object(publish_node, "complete_publication") as complete,
+        ):
+            result = publish_node.publish(self._state())
+
+        slack.assert_not_called()
+        github.assert_not_called()
+        jira.assert_called_once_with(
+            "[INC-PUBLISH-NODE] [SEV2] Latency",
+            "reviewed draft",
+        )
+        complete.assert_called_once_with("key", "token", jira_url)
+        self.assertEqual(result["postmortem_url"], jira_url)
+
 
 class PublicationEndpointTests(unittest.TestCase):
     def test_operator_approval_resumes_the_final_interrupt_and_completes_lifecycle(self):
