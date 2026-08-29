@@ -103,8 +103,8 @@ External publishing requires a separate final-draft approval. Before calling
 providers, the application commits a unique publication attempt. Completed
 attempts are deduplicated. If a process or provider fails after an
 acknowledgement may have occurred, the attempt becomes `uncertain` and
-automatic retry is blocked. Reconcile Slack and GitHub manually and preserve
-the audit trail. Per-destination retry remains future work;
+automatic retry is blocked. Reconcile Jira, Slack and GitHub manually and
+preserve the audit trail. Per-destination retry remains future work;
 `PUBLISH_EXTERNAL=false` is the safe kill switch.
 
 ## Model or source outage
@@ -127,6 +127,7 @@ raw incident payloads in diagnostics.
 ## Kill switches
 
 `SKIP_LLM=true` disables LLM calls; `USE_TOOL_CALLING=false` disables semantic
-tool expansion; `PUBLISH_EXTERNAL=false` blocks external publication. Reviewer
-access is disabled by removing/revoking reviewer credentials or taking the UI
-route out of service.
+tool expansion; `PUBLISH_EXTERNAL=false` blocks all external publication.
+`PUBLISH_JIRA_MCP=false`, `PUBLISH_SLACK=false` and `PUBLISH_GITHUB=false`
+disable individual destinations. Reviewer access is disabled by
+removing/revoking reviewer credentials or taking the UI route out of service.

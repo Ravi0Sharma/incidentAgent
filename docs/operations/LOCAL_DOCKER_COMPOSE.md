@@ -89,6 +89,20 @@ The second command sends one signed synthetic canary through API, two workers,
 MySQL and the OpenAI model. It does not use external telemetry connectors and
 cannot publish externally.
 
+### Start with Jira MCP publication to a sandbox
+
+Only after configuring a disposable Jira project and a scoped token in the
+ignored `.env`, start the explicit publisher override:
+
+```bash
+docker compose -f compose.yaml -f compose.jira-mcp.yaml up --build --wait
+```
+
+This keeps fixtures and deterministic analysis but changes the external-effect
+boundary: approval of the exact draft can create a Jira issue. Do not run the
+normal verifier's review steps unattended against a real destination. Setup,
+least-privilege and failure semantics are in [JIRA_MCP.md](JIRA_MCP.md).
+
 On the first run Docker downloads the pinned base images, builds the application
 image, initializes the database users, applies every migration, starts both
 workers and finally marks the API healthy when `/readyz` sees two current

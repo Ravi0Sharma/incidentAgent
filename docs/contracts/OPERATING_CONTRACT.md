@@ -17,11 +17,16 @@ repository is ready for production traffic.
 | Model | Configurable OpenAI-compatible structured-output client | Optional, bounded and never an authority |
 | Runtime state | MySQL events, queue, revisions, reviews and LangGraph checkpoints | SQLite is limited to bounded local raw-log cache and isolated legacy tests |
 | Review | Local browser flow; secure configuration supports OIDC/RBAC | Real IdP registration and staging authorization proof are deployment work |
-| Output | Versioned local HTML drafts | External publishing is off by default and needs exact-draft approval |
+| Output | Versioned local drafts; optional Slack, GitHub or Jira MCP publication | External publishing is off by default and needs exact-draft approval |
 
 The default Compose stack uses fixtures, disables external connectors/model
 calls and keeps publishing off. The OpenAI override uses redacted synthetic
 evidence and still cannot publish.
+
+Jira publication uses only Atlassian Rovo MCP's `createJiraIssue` tool with a
+deployment-owned project and issue type. It is independently switchable, does
+not grant remediation authority and does not retry an uncertain write. See
+[JIRA_MCP.md](../operations/JIRA_MCP.md).
 
 CloudWatch evidence clients construct real boto3 requests, but the public test
 suite injects AWS-shaped fakes. No real AWS account proof, credential or private

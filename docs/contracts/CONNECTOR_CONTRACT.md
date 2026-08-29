@@ -14,6 +14,7 @@ credentials or unrestricted provider queries.
 | CloudWatch Logs Insights | Allowlisted service log groups and fixed query | 50 groups, result limit and polling budget | Real boto3 path; AWS-shaped fake clients in tests |
 | CloudWatch GetMetricData | Allowlisted metric definitions | 500 queries and bounded pages | Real boto3 path; AWS-shaped fake clients in tests |
 | Slack | Separately approved postmortem notification | Exact-draft approval and durable attempt guard | Mocked unless explicitly configured |
+| Jira via Atlassian Rovo MCP | Separately approved `createJiraIssue` call | Fixed deployment-owned site/project/type; no write retry | Fake MCP result in tests; no live Jira write included |
 
 The default Compose stack disables all external connectors. Missing local Loki,
 Prometheus or GitHub configuration uses deterministic fixture data. Mocks are
@@ -21,6 +22,8 @@ development behavior, not evidence that a provider is production-ready.
 
 CloudWatch configuration and its exact test boundary are documented in
 [CLOUDWATCH.md](../operations/CLOUDWATCH.md).
+Jira publication setup and its verification boundary are documented in
+[JIRA_MCP.md](../operations/JIRA_MCP.md).
 
 ## Request policy
 

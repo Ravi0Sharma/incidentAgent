@@ -44,6 +44,12 @@ at-most-once attempt guard and blocks ambiguous retries. Managed-environment
 failover, real provider contracts, per-destination publication recovery and
 long-duration SLO evidence remain open.
 
+**Jira MCP update (2026-08-29):** the approved draft can now call the fixed
+Atlassian Rovo MCP `createJiraIssue` tool with deployment-owned site, project
+and issue type. API-token auth, destination switches, egress validation and
+uncertain-write blocking are implemented. Tests use fake MCP results; a live
+Jira sandbox write and per-destination recovery evidence remain open.
+
 **Planning update (2026-07-22):** the active finish line is now
 [`Local-Safe v0.1`](../development/SAFE_COMPLETION_PLAN.md), not Shadow-Ready. It permits
 fixture/replay-only local use with no production telemetry, hosted deployment,
@@ -57,7 +63,7 @@ claim. The suite ran against the configured local MySQL test database.
 
 Current local baseline:
 
-- `python scripts/quality_gate.py`: 345/345 test methods
+- `python scripts/quality_gate.py`: 352/352 test methods
   passed, including MySQL lifecycle/persistence, security/observability, API,
   evidence, hypothesis, connector-policy, CloudWatch adapter, Hadoop, HDFS_v1,
   OpenStack, signal-retention and adversarial-boundary coverage. The same run
@@ -782,8 +788,8 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
   Hypothesis 1/2/3 was approved. Analysis approval and document-publication
   approval are separate permissions and audit events.
 - [ ] `REV-012` `P0` Make external publishing idempotent with an outbox and
-  destination idempotency key. Retries cannot create duplicate Slack messages
-  or GitHub issues.
+  destination idempotency key. Retries cannot create duplicate Jira or GitHub
+  issues or Slack messages.
 - [x] `REV-012a` A durable publication key prevents a completed attempt from
   running twice and blocks automatic retry when delivery is uncertain. Full
   per-destination idempotency/reconciliation remains open under `REV-012` and
@@ -862,7 +868,8 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
 - [x] `SEC-014a` Reviewer HTML no longer client-renders model Markdown and a
   regression corpus covers malicious hypothesis/Markdown, oversized rendering,
   path/header/open-redirect injection and safe report filenames. Tool traces and
-  Slack/GitHub publisher boundaries now apply recursive/final redaction.
+  Jira MCP, Slack and GitHub publisher boundaries now apply final redaction;
+  Jira accepts only a trusted HTTPS result on the configured Atlassian site.
 - [ ] `SEC-015` `P0` Pin and scan dependencies, generate an SBOM, scan container
   images and secrets, and define remediation SLAs for critical vulnerabilities.
 - [x] `SEC-015a` Python 3.11.15 and direct/transitive dependencies are hash
@@ -905,8 +912,8 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
 - [x] `REL-005b` Invalid/authorization worker failures are terminal dead letters;
   other worker failures use bounded retry/dead-letter behavior in local tests.
 - [ ] `REL-006` `P0` Make every external write transactional through an outbox.
-  Crash/restart between draft, approval, Slack, and GitHub cannot lose state or
-  duplicate side effects.
+  Crash/restart between draft, approval, Jira, Slack and GitHub cannot lose
+  state or duplicate side effects.
 - [ ] `REL-007` `P0` Add workflow deadlines, node timeouts, cancellation, and
   stale-job detection. A stuck provider cannot hold an incident indefinitely.
 - [ ] `REL-008` `P0` Cap incident state, raw evidence, group count, timeline
@@ -1144,8 +1151,8 @@ Supporting artifact: [`HYPOTHESIS_CONTRACT.md`](../contracts/HYPOTHESIS_CONTRACT
   configured approval/audit system.
 - [x] `DEP-006b` Production configuration requires the MySQL checkpointer,
   explicit origins, non-local redaction salt, reviewer credentials, webhook
-  secret, HTTPS model URL and disabled external publishing; covered by
-  `tests/test_operational_baselines.py`.
+  secret, HTTPS model URL and guarded destination-specific publisher config;
+  covered by `tests/test_operational_baselines.py`.
 - [ ] `DEP-007` `P0` Separate development, test, staging, shadow, and production
   data/credentials/destinations. Tests cannot publish to real incident channels.
 - [ ] `DEP-008` `P0` Add CI/CD with build provenance, signed artifact, migration
@@ -1264,7 +1271,7 @@ and the dependency order for resuming this work.
 - [ ] Draft postmortems remain internal and have a separate publish approval
   gate (`REV-006` through `REV-011`).
 - [ ] Outbox/idempotency and partial-failure recovery are tested against sandbox
-  Slack/GitHub/document destinations (`REV-012`, `REV-013`, `REL-006`).
+  Jira/Slack/GitHub/document destinations (`REV-012`, `REV-013`, `REL-006`).
 - [ ] Approved knowledge memory is available with filter-first retrieval,
   citations, poisoning controls, retention, and measured retrieval quality
   (`MEM-007` through `MEM-014`).

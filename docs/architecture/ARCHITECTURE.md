@@ -19,6 +19,8 @@ independent workers.
 8. The graph stops for analysis review.
 9. Approval creates RCA and a versioned local postmortem draft.
 10. A second exact-draft decision is required before external publication.
+11. The publish node always uses the durable attempt guard; enabled
+    destinations may include Jira through Rovo MCP, Slack or GitHub.
 
 The CloudWatch evidence path uses real boto3 APIs when explicitly configured.
 The public tests use AWS-shaped fake clients, and raw EventBridge intake is not
@@ -85,7 +87,7 @@ Treat all of these as untrusted:
 - model output;
 - reviewer feedback and browser requests;
 - database/report files; and
-- future publisher responses.
+- Jira MCP, Slack, GitHub and other publisher responses.
 
 The incident/correlation ID crosses every boundary. Input limits, recursive
 redaction, typed evidence, output escaping, deployment-owned connector

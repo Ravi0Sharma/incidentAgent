@@ -11,6 +11,7 @@ only current behavior, public evaluation evidence and operating boundaries.
 | Understand the results | [Evaluation](EVALUATION.md) |
 | Run the complete local stack | [Docker Compose runbook](operations/LOCAL_DOCKER_COMPOSE.md) |
 | Connect CloudWatch safely | [CloudWatch integration](operations/CLOUDWATCH.md) |
+| Send an approved draft to Jira | [Jira MCP output](operations/JIRA_MCP.md) |
 | Check production blockers | [Production readiness](operations/PRODUCTION_READINESS.md) |
 
 ## Contracts
@@ -28,6 +29,7 @@ only current behavior, public evaluation evidence and operating boundaries.
 - [Native setup](operations/SETUP_GUIDE.md)
 - [Operator runbooks](operations/OPERATOR_RUNBOOKS.md)
 - [Security and operations](operations/SECURITY_AND_OPERATIONS.md)
+- [Jira MCP output](operations/JIRA_MCP.md)
 - [GitLab CI](operations/GITLAB_CI.md)
 - [Production readiness](operations/PRODUCTION_READINESS.md)
 

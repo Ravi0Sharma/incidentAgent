@@ -54,8 +54,9 @@ public-corpus availability; the current decision gate and priority order are in
   opt-in CloudWatch evidence path uses real boto3 clients but public tests use
   sanitized fakes; the standalone EventBridge translator is not yet wired to
   the HTTP route.
-- POC reports are written only to the configured local `output/` folder. No
-  Slack, GitHub, GitLab, ticket, or other external publishing is in scope.
+- The base POC writes reports only to the configured local `output/` folder.
+  An explicit Jira MCP override exists for a disposable sandbox, but it is not
+  part of Local-Safe evidence or a production-readiness claim.
 - Named ownership and formal SLO governance are not POC scope. They may be
   restored for a later operated production service.
 - The active completion target is **Local-Safe v0.1**: fixture/replay-only,

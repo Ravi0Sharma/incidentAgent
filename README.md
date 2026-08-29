@@ -40,7 +40,7 @@ improvement; dataset-specific answers are not added as hidden rules.
 
 | Check | Result | What it measures |
 | --- | --- | --- |
-| Engineering gate | 345 tests; 75.4% repository, 82.2% core and 95.9% security branch coverage | Code and local runtime behavior |
+| Engineering gate | 352 tests; 75.4% repository, 82.2% core and 95.9% security branch coverage | Code and local runtime behavior |
 | HDFS 2k grouping | 100% pair precision; 96.60% recall; 14/14 templates retained | Log grouping on one public corpus |
 | HDFS v3/TraceBench grouping | 100% pair precision; 98.83% recall; 75/75 labels retained | Grouping on a second corpus |
 | Curated BGL/OpenStack pair gate | 73/73 pairs; 100% precision, recall and specificity | Reviewed normalization contracts |
@@ -180,6 +180,21 @@ docker compose -f compose.yaml -f compose.openai.yaml --profile tools run --rm -
 The OpenAI run sends only redacted synthetic evidence. External publication
 remains disabled.
 
+### Optional Jira MCP output
+
+The approved postmortem can create a Jira work item through Atlassian Rovo
+MCP. Put the service-account email, scoped API token, Atlassian site URL and
+project key in the ignored `.env`; then use the opt-in Compose override:
+
+```bash
+docker compose -f compose.yaml -f compose.jira-mcp.yaml up --build --wait
+```
+
+The override enables Jira only. The Jira call happens after the separate
+exact-draft publication approval, uses the fixed `createJiraIssue` MCP tool and
+does not retry an uncertain write. See [Jira MCP output](docs/operations/JIRA_MCP.md)
+for variables, least privilege and the exact verification boundary.
+
 ### What verification proves
 
 The verifier does more than ping the API. It:
@@ -264,7 +279,7 @@ Complete the [production-readiness checklist](docs/operations/PRODUCTION_READINE
 | --- | --- |
 | `webhook/` | API, authentication, durable queue and review lifecycle |
 | `graph/` | LangGraph workflow, state, nodes, routing and checkpoints |
-| `clients/` | Loki, Prometheus, CloudWatch, GitHub and model adapters |
+| `clients/` | Loki, Prometheus, CloudWatch, GitHub, Jira MCP and model adapters |
 | `utils/`, `rules/` | Redaction, evidence, correlation, budgets and safety rules |
 | `prompts/` | Versioned interpretation, RCA and postmortem prompts |
 | `fixtures/`, `evaluation/` | Evaluation data loaders, held-out labels and scoring |
@@ -280,6 +295,7 @@ Complete the [production-readiness checklist](docs/operations/PRODUCTION_READINE
 | Full workflow | [System flow](docs/architecture/SYSTEM_FLOW.svg) |
 | Evaluation method and results | [Evaluation](docs/EVALUATION.md) |
 | CloudWatch boundary and setup | [CloudWatch integration](docs/operations/CLOUDWATCH.md) |
+| Jira output setup | [Jira MCP output](docs/operations/JIRA_MCP.md) |
 | API behavior | [OpenAPI contract](docs/contracts/OPENAPI_CONTRACT.md) |
 | Evidence and hypothesis rules | [Evidence contract](docs/contracts/EVIDENCE_CONTRACT.md) and [hypothesis contract](docs/contracts/HYPOTHESIS_CONTRACT.md) |
 | Local operation and recovery | [Docker Compose runbook](docs/operations/LOCAL_DOCKER_COMPOSE.md) and [operator runbooks](docs/operations/OPERATOR_RUNBOOKS.md) |

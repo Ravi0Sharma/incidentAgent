@@ -36,7 +36,7 @@ improvement; a dataset-specific answer is not added as a hidden rule.
 
 | Check | Result | Scope |
 | --- | --- | --- |
-| Engineering gate | 345 tests; 75.4% repository, 82.2% core and 95.9% security branch coverage | Code and local runtime behavior |
+| Engineering gate | 352 tests; 75.4% repository, 82.2% core and 95.9% security branch coverage | Code and local runtime behavior |
 | HDFS 2k grouping | 100% pair precision; 96.60% recall; 14/14 templates retained | One public grouping corpus |
 | HDFS v3/TraceBench grouping | 100% pair precision; 98.83% recall; 75/75 labels retained | A second public grouping corpus |
 | Curated BGL/OpenStack pairs | 73/73; 100% precision, recall and specificity | Reviewed normalization boundary, not an independent gold set |
