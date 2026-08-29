@@ -6,25 +6,6 @@ It collects a limited amount of evidence, ranks possible explanations and
 shows uncertainty. A human reviews the result. The agent does not remediate
 systems or publish reports by itself.
 
-## How a result is produced
-
-```text
-alert
-  -> validate, normalize and redact
-  -> collect bounded logs, metrics and deployment evidence
-  -> extract deterministic signals
-  -> rank explanations (optional model interpretation)
-  -> freeze the analysis for human review
-```
-
-MySQL stores alerts, queued work, evidence, analysis revisions and review
-decisions. Two workers process the queue. LangGraph checkpoints each step so a
-different worker can continue after a crash.
-
-The model receives only bounded, redacted evidence. It can explain or abstain,
-but it cannot create evidence, approve a result, publish or take operational
-action.
-
 ## How the reported results were obtained
 
 This project does not train or fine-tune a model. It evaluates the complete
@@ -69,6 +50,25 @@ Reproduce the main checks:
   --output output/hadoop-typed-review-all-55.json
 ```
 
+## How a result is produced
+
+```text
+alert
+  -> validate, normalize and redact
+  -> collect bounded logs, metrics and deployment evidence
+  -> extract deterministic signals
+  -> rank explanations (optional model interpretation)
+  -> freeze the analysis for human review
+```
+
+MySQL stores alerts, queued work, evidence, analysis revisions and review
+decisions. Two workers process the queue. LangGraph checkpoints each step so a
+different worker can continue after a crash.
+
+The model receives only bounded, redacted evidence. It can explain or abstain,
+but it cannot create evidence, approve a result, publish or take operational
+action.
+
 ## Run locally
 
 Requirements: Docker Compose v2, 4 GB free memory and free ports `8000`,
@@ -105,6 +105,19 @@ Useful endpoints:
 For setup, recovery, stress tests and reset commands, use the
 [Docker Compose runbook](docs/operations/LOCAL_DOCKER_COMPOSE.md).
 
+## Safety boundary
+
+- Human approval is required.
+- Automatic remediation is not implemented.
+- External publishing is off by default.
+- Model confidence is not proof of causality.
+- Missing or contradictory evidence can produce an explicit abstention.
+- Local test results are not a production-readiness claim.
+
+## Before connecting a target environment
+
+Complete the [production-readiness checklist](docs/operations/PRODUCTION_READINESS.md).
+
 ## Main code
 
 | Path | Purpose |
@@ -119,15 +132,3 @@ For setup, recovery, stress tests and reset commands, use the
 
 Start with [the documentation index](docs/README.md) for anything beyond this
 overview.
-
-## Safety boundary
-
-- Human approval is required.
-- Automatic remediation is not implemented.
-- External publishing is off by default.
-- Model confidence is not proof of causality.
-- Missing or contradictory evidence can produce an explicit abstention.
-- Local test results are not a production-readiness claim.
-
-Production requirements and the release gate are in
-[PRODUCTION_READINESS.md](docs/operations/PRODUCTION_READINESS.md).
