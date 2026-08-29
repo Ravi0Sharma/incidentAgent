@@ -52,7 +52,7 @@ def _production_config(**overrides):
         "REDACTION_SALT": "environment-specific-secret",
         "CORS_ORIGINS": ["https://incident.example.test"],
         "CHECKPOINTER": "mysql",
-        "DEPLOYMENT_TENANT_ID": "arcvial",
+        "DEPLOYMENT_TENANT_ID": "example-tenant",
         "SECRETS_PROVIDER": "vault",
         "PUBLIC_BASE_URL": "https://incident.example.test",
         "PROCESS_ROLE": "api",

@@ -9,6 +9,16 @@ htmlcov/
 
 .venv/
 .env
+.env.*
+!.env.example
+
+# Private environment and credential material.
+*.env
+!*.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 
 .langgraph_api/
 .phoenix_data/
@@ -23,5 +33,18 @@ data/external/raw/
 data/external/processed/
 # Local investigation state may contain incident evidence; keep it local.
 data/*.sqlite3
+*.sqlite
+*.sqlite3
+*.db
+
+# Private CloudWatch scope maps contain real infrastructure identifiers.
+config/cloudwatch_sources*.yaml
+!config/cloudwatch_sources.example.yaml
+
+# Local exports and repository backups.
+*.backup
+*.bak
+*.bundle
+*.dump
 
 .DS_Store
