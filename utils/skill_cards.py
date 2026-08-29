@@ -1,8 +1,7 @@
 def incident_skill_cards(state):
-    """Small runtime cards distilled from repo skills.
+    """Small built-in runtime policy cards.
 
-    Do not inject full SKILL.md files into prompts. These cards keep
-    the useful policy signal without turning skills into context bloat.
+    Keep the useful policy signal without turning guidance into context bloat.
     """
 
     cards = [
