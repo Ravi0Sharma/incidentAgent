@@ -4,9 +4,6 @@ Incident Agent turns an alert into a reviewable, evidence-backed incident
 analysis. It ranks possible explanations, shows uncertainty and waits for a
 human decision. It does not remediate systems or publish reports by itself.
 
-**Current status:** verified for local synthetic use, including an explicit
-OpenAI test mode. It is not approved for production traffic.
-
 ## How the reported results were obtained
 
 This project does not train or fine-tune a model. It evaluates the complete
