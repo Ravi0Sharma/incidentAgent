@@ -277,16 +277,19 @@ and human authority so each transition can be bounded, tested and audited.
 | Publication review | Exact draft digest and explicit publisher selection | An edited or different report being published under old approval |
 | Publisher | Off by default, durable attempt guard, no ambiguous retry | Duplicate external work items after uncertain acknowledgement |
 
-This separation also makes regressions diagnosable. If grouping changed, its
-tests can fail without blaming the model. If a provider timed out, the trace
-shows that independently from evidence quality. If the result changed after
-new evidence, the revision diff shows why.
+### Incident-response skills
 
-### Portable incident-response skills
+[`skills/`](skills/) contains reusable `SKILL.md` playbooks for incident
+classification, investigation, coordination, security response and
+postmortems. They have three concrete uses in this project:
 
-The restored [`skills/`](skills/) directory contains portable `SKILL.md`
-playbooks. They are useful for human reference or for an external agent runtime
-that supports YAML-frontmatter skills.
+- **LangGraph runtime:** selected rules are compiled into small,
+  phase-specific policy profiles by [`utils/skill_cards.py`](utils/skill_cards.py)
+  and applied during semantic correlation and incident interpretation.
+- **Agent runtimes:** tools that support YAML-frontmatter skills can load an
+  individual `SKILL.md` directly.
+- **Operators and contributors:** each file is a standalone playbook that can
+  be reviewed and adapted without reading the application code.
 
 | Skill | Use |
 | --- | --- |
@@ -299,14 +302,11 @@ that supports YAML-frontmatter skills.
 | `agent-incident-responder` | Apply human-in-the-loop, transparency and graceful-degradation principles |
 | `caveman` | Produce terse operator communication at `lite`, `full` or `ultra` level |
 
-These files do **not** load themselves into this LangGraph application and do
-not change its permissions, prompts or routing. Runtime safety behavior remains
-implemented and tested in the graph, contracts, prompts and
-`utils/skill_cards.py`. Treat a portable skill as guidance until its rules are
-implemented as executable controls.
-
-See [the skills index](skills/README.md) for supported folder formats, source
-attribution and loading notes for other runtimes.
+The application intentionally uses compact policy profiles instead of placing
+entire skill files in model context. This keeps the active instructions small
+and testable while the full playbooks remain available for compatible agents
+and human review. See the [skills index](skills/README.md) for loading
+instructions and source attribution.
 
 ### CloudWatch path
 
